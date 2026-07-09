@@ -60,14 +60,14 @@ export default function TextAttribution({ modelData, modelColor }) {
   return (
     <div>
       {/* Token row */}
-      <p
+      <div
         className="text-[13px] leading-loose font-medium tracking-wide flex flex-wrap gap-y-1"
         aria-label="Token attribution map"
       >
         {tokenData.map((t) => {
           const isHovered = hoveredIdx === t.index;
-          const alpha = 0.08 + t.gradNorm * 0.72;          // lightest 8% → brightest 80%
-          const borderAlpha = 0.15 + t.gradNorm * 0.65;    // rank-based step gradient
+          const alpha = 0.16 + t.gradNorm * 0.68;          // lightest 16% → brightest 84%
+          const borderAlpha = 0.28 + t.gradNorm * 0.62;    // rank-based step gradient
 
           return (
             <span
@@ -76,10 +76,10 @@ export default function TextAttribution({ modelData, modelColor }) {
               style={{
                 background: hexToRgba(modelColor.accent, isHovered ? Math.min(alpha + 0.2, 0.9) : alpha),
                 borderBottom: `2px solid ${hexToRgba(modelColor.accent, isHovered ? 1 : borderAlpha)}`,
-                color: t.gradNorm > 0.55 ? 'white' : 'rgba(255,255,255,0.75)',
-                fontWeight: t.gradNorm > 0.7 ? '600' : '400',
+                color: t.gradNorm > 0.62 ? 'white' : 'rgba(11,18,32,0.88)',
+                fontWeight: t.gradNorm > 0.7 ? '700' : '500',
                 transition: 'background 0.15s ease, color 0.15s ease',
-                boxShadow: isHovered ? `0 0 12px ${hexToRgba(modelColor.accent, 0.4)}` : 'none',
+                boxShadow: isHovered ? `0 0 12px ${hexToRgba(modelColor.accent, 0.52)}` : 'none',
               }}
               onMouseEnter={() => setHoveredIdx(t.index)}
               onMouseLeave={() => setHoveredIdx(null)}
@@ -93,12 +93,12 @@ export default function TextAttribution({ modelData, modelColor }) {
                              flex flex-col items-center gap-0.5
                              px-2.5 py-1.5 rounded-lg text-[10px] whitespace-nowrap shadow-xl"
                   style={{
-                    background: '#12141aee',
+                    background: '#111827ee',
                     border: `1px solid ${hexToRgba(modelColor.accent, 0.45)}`,
                     boxShadow: `0 4px 20px ${hexToRgba(modelColor.accent, 0.2)}`,
                   }}
                 >
-                  <span className="mono font-bold text-white">
+                  <span className="mono font-bold" style={{ color: 'white' }}>
                     &quot;{t.token}&quot; · act {t.peak.toFixed(4)}
                   </span>
                   <span style={{ color: modelColor.text }}>
@@ -107,7 +107,7 @@ export default function TextAttribution({ modelData, modelColor }) {
                   {/* Activation heat bar */}
                   <div
                     className="w-full h-1 rounded-full mt-0.5"
-                    style={{ background: 'rgba(255,255,255,0.1)' }}
+                    style={{ background: 'rgba(255,255,255,0.16)' }}
                   >
                     <div
                       className="h-full rounded-full"
@@ -122,7 +122,7 @@ export default function TextAttribution({ modelData, modelColor }) {
             </span>
           );
         })}
-      </p>
+      </div>
 
       {/* Intensity scale legend */}
       <div className="mt-3 flex items-center gap-2">
@@ -130,7 +130,7 @@ export default function TextAttribution({ modelData, modelColor }) {
         <div
           className="flex-1 h-1.5 rounded-full max-w-[120px]"
           style={{
-            background: `linear-gradient(90deg, ${hexToRgba(modelColor.accent, 0.08)}, ${modelColor.accent})`,
+            background: `linear-gradient(90deg, ${hexToRgba(modelColor.accent, 0.22)}, ${modelColor.accent})`,
           }}
         />
         <span className="text-[10px] text-white/25">Low → High</span>

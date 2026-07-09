@@ -52,9 +52,9 @@ export default function FeatureBars({ modelData, modelColor, topK }) {
             <span
               className="mono text-[9px] font-bold w-12 flex-shrink-0 px-1 py-0.5 rounded-md text-center truncate"
               style={{
-                background: isTop ? modelColor.bg : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${isTop ? modelColor.border : 'rgba(255,255,255,0.06)'}`,
-                color: isTop ? modelColor.text : 'rgba(255,255,255,0.35)',
+                background: isTop ? modelColor.bg : 'rgba(22,97,171,0.075)',
+                border: `1px solid ${isTop ? modelColor.border : 'rgba(22,97,171,0.22)'}`,
+                color: isTop ? modelColor.text : 'rgba(11,18,32,0.68)',
               }}
               title={`Feature #${feat.feature_id}`}
             >
@@ -66,7 +66,7 @@ export default function FeatureBars({ modelData, modelColor, topK }) {
               {/* Concept label */}
               <span
                 className="text-[10px] font-medium leading-none truncate"
-                style={{ color: isTop ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)' }}
+                style={{ color: isTop ? 'rgba(11,18,32,0.94)' : 'rgba(11,18,32,0.76)' }}
                 title={feat.concept_label}
               >
                 {feat.concept_label}
@@ -76,7 +76,7 @@ export default function FeatureBars({ modelData, modelColor, topK }) {
               <div className="flex items-center gap-1.5">
                 <div
                   className="relative flex-1 h-3 rounded-md overflow-hidden"
-                  style={{ background: 'rgba(255,255,255,0.04)' }}
+                  style={{ background: 'rgba(22,97,171,0.14)' }}
                 >
                   {/* Fill */}
                   <div
@@ -116,7 +116,7 @@ export default function FeatureBars({ modelData, modelColor, topK }) {
             {/* fired_token_count badge */}
             <span
               className="mono text-[9px] w-8 text-right flex-shrink-0 font-semibold"
-              style={{ color: feat.fired_token_count > 1 ? modelColor.text : 'rgba(255,255,255,0.25)' }}
+              style={{ color: feat.fired_token_count > 1 ? modelColor.text : 'rgba(11,18,32,0.58)' }}
               title={`Fired in ${feat.fired_token_count} token(s)`}
             >
               {feat.fired_token_count}×

@@ -3,7 +3,7 @@ import { PIPELINE_STEPS } from '../constants';
 
 /**
  * LoadingOverlay
- * Full-screen overlay that narrates the TransformerLens → SAELens pipeline
+ * Full-screen overlay that narrates the LLM → XAI pipeline
  * while the backend /analyze request is in flight.
  *
  * Props:
@@ -109,7 +109,13 @@ export default function LoadingOverlay({ models, availableModels }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-[#08090d]/90 backdrop-blur-md grid-bg" />
+      <div
+        className="absolute inset-0 backdrop-blur-md grid-bg"
+        style={{
+          background:
+            'linear-gradient(135deg, rgba(255,255,255,0.94), rgba(231,240,255,0.94)), radial-gradient(circle at 22% 18%, rgba(130,49,142,0.18), transparent 34%)',
+        }}
+      />
 
       {/* Panel */}
       <div className="relative w-full max-w-2xl mx-4 glass-card overflow-hidden shadow-2xl">
@@ -117,7 +123,7 @@ export default function LoadingOverlay({ models, availableModels }) {
         <div
           className="absolute left-0 right-0 h-px pointer-events-none z-10"
           style={{
-            background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.6), transparent)',
+            background: 'linear-gradient(90deg, transparent, rgba(130,49,142,0.58), rgba(22,97,171,0.48), transparent)',
             animation: 'scanLine 3s linear infinite',
             top: 0,
           }}
@@ -130,11 +136,14 @@ export default function LoadingOverlay({ models, availableModels }) {
             <div
               className="absolute inset-0 rounded-full border-2 border-transparent animate-spin-slow"
               style={{
-                borderTopColor: '#6366f1',
-                borderRightColor: '#a78bfa',
+                borderTopColor: '#82318e',
+                borderRightColor: '#1661ab',
               }}
             />
-            <div className="absolute inset-1 rounded-full bg-indigo-500/20 flex items-center justify-center">
+            <div
+              className="absolute inset-1 rounded-full flex items-center justify-center"
+              style={{ background: 'rgba(130,49,142,0.18)' }}
+            >
               <span className="text-sm">🔬</span>
             </div>
           </div>
@@ -144,22 +153,22 @@ export default function LoadingOverlay({ models, availableModels }) {
               Running Interpretability Pipeline
             </h2>
             <p className="text-xs text-white/40 mt-0.5">
-              TransformerLens + SAELens — Sequential hot-swap mode
+              LLM + XAI — Sequential hot-swap mode
             </p>
           </div>
 
           <div className="ml-auto flex gap-2">
             <span
               className="tag"
-              style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.3)' }}
+              style={{ background: 'rgba(130,49,142,0.17)', color: '#5f1f69', border: '1px solid rgba(130,49,142,0.40)' }}
             >
-              TransformerLens
+              LLM
             </span>
             <span
               className="tag"
-              style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)' }}
+              style={{ background: 'rgba(22,97,171,0.17)', color: '#0d3f7a', border: '1px solid rgba(22,97,171,0.40)' }}
             >
-              SAELens
+              XAI
             </span>
           </div>
         </div>
@@ -173,18 +182,19 @@ export default function LoadingOverlay({ models, availableModels }) {
               style={{
                 background:
                   i === currentModelIdx
-                    ? 'rgba(99,102,241,0.18)'
-                    : 'rgba(255,255,255,0.04)',
+                    ? 'rgba(130,49,142,0.18)'
+                    : 'rgba(22,97,171,0.090)',
                 border:
                   i === currentModelIdx
-                    ? '1px solid rgba(99,102,241,0.5)'
-                    : '1px solid rgba(255,255,255,0.07)',
-                color: i === currentModelIdx ? '#a5b4fc' : 'rgba(255,255,255,0.4)',
+                    ? '1px solid rgba(130,49,142,0.46)'
+                    : '1px solid rgba(22,97,171,0.24)',
+                color: i === currentModelIdx ? '#5f1f69' : 'rgba(11,18,32,0.68)',
                 transition: 'all 0.3s ease',
               }}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${i === currentModelIdx ? 'bg-indigo-400 animate-pulse' : 'bg-white/20'}`}
+                className={`w-1.5 h-1.5 rounded-full ${i === currentModelIdx ? 'animate-pulse' : ''}`}
+                style={{ background: i === currentModelIdx ? '#82318e' : 'rgba(22,97,171,0.36)' }}
               />
               {availableModels.find((m) => m.key === key)?.display_name ?? key}
             </div>
@@ -197,8 +207,8 @@ export default function LoadingOverlay({ models, availableModels }) {
           className="mx-4 mb-4 rounded-xl overflow-y-auto"
           style={{
             height: '240px',
-            background: 'rgba(0,0,0,0.4)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(244,249,255,0.94)',
+            border: '1px solid rgba(22,97,171,0.28)',
             padding: '12px 14px',
           }}
         >
@@ -238,12 +248,15 @@ export default function LoadingOverlay({ models, availableModels }) {
           {/* Blinking cursor */}
           {!done && (
             <div className="flex items-center gap-1 mt-1">
-              <span className="mono text-[10px] text-indigo-400/60">{'>'}</span>
-              <span className="inline-block w-1.5 h-3 bg-indigo-400/70 animate-terminal-blink rounded-sm" />
+              <span className="mono text-[10px]" style={{ color: '#82318e' }}>{'>'}</span>
+              <span
+                className="inline-block w-1.5 h-3 animate-terminal-blink rounded-sm"
+                style={{ background: 'rgba(130,49,142,0.72)' }}
+              />
             </div>
           )}
           {done && (
-            <div className="mono text-[10px] text-emerald-400 mt-1">
+            <div className="mono text-[10px] mt-1" style={{ color: '#1661ab' }}>
               ✅ All models processed. Awaiting response…
             </div>
           )}
@@ -259,14 +272,14 @@ export default function LoadingOverlay({ models, availableModels }) {
           </div>
           <div
             className="h-1.5 w-full rounded-full overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.07)' }}
+            style={{ background: 'rgba(22,97,171,0.18)' }}
           >
             <div
               className="h-full rounded-full animate-shimmer"
               style={{
                 width: `${progress}%`,
                 background:
-                  'linear-gradient(90deg, #4f46e5, #6366f1, #a78bfa, #6366f1, #4f46e5)',
+                  'linear-gradient(90deg, #5f1f69, #82318e, #1661ab, #4f46e5, #82318e)',
                 backgroundSize: '200% auto',
                 transition: 'width 0.5s ease',
               }}

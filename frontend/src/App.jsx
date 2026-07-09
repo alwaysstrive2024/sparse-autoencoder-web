@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Brain, Cpu, Zap, AlertCircle, RefreshCw } from 'lucide-react';
+import { Cpu, Zap, AlertCircle, RefreshCw } from 'lucide-react';
 
 import { API_BASE, FALLBACK_MODELS, getModelColor } from './constants';
 import ControlPanel from './components/ControlPanel';
 import ModelColumn from './components/ModelColumn';
-import DivergenceSummary from './components/DivergenceSummary';
+import CrossModelVisuals from './components/CrossModelVisuals';
 import LoadingOverlay from './components/LoadingOverlay';
+import fangcunLogo from '../fangcun logo.png';
 
 export default function App() {
   // ── State ────────────────────────────────────────────────────────────────
@@ -84,48 +85,46 @@ export default function App() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 border-b border-white/[0.06]"
-        style={{ background: 'rgba(8,9,13,0.88)', backdropFilter: 'blur(16px)' }}
+        style={{
+          background: 'rgba(255,255,255,0.94)',
+          backdropFilter: 'blur(18px)',
+          boxShadow: '0 10px 30px rgba(22,97,171,0.14)',
+        }}
       >
         <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center gap-3">
           {/* Logo */}
           <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)' }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
+            style={{
+              background: 'rgba(255,255,255,0.88)',
+              border: '1px solid rgba(130,49,142,0.18)',
+              boxShadow: '0 8px 22px rgba(130,49,142,0.18)',
+            }}
           >
-            <Brain size={16} className="text-white" />
+            <img src={fangcunLogo} alt="Fangcun AI" className="h-full w-full object-contain p-1" />
           </div>
 
           <div className="leading-tight">
-            <h1 className="text-sm font-bold text-white">SAE Feature Dashboard</h1>
-            <p className="text-[10px] text-white/35">Multi-Model Mechanistic Interpretability</p>
+            <h1 className="text-sm font-bold text-white">Fangcun AI Dashboard</h1>
+            <p className="text-[10px] text-white/35"> Mechanistic Interpretability</p>
           </div>
 
           {/* Pipeline badges */}
           <div className="ml-4 flex items-center gap-2 flex-wrap">
-            <PipelineBadge label="TransformerLens" color="#a78bfa" />
+            <PipelineBadge label="LLM" color="#82318e" />
             <span className="text-white/20 text-xs">+</span>
-            <PipelineBadge label="SAELens" color="#34d399" />
+            <PipelineBadge label="XAI" color="#1661ab" />
             <span className="text-white/20 text-xs">|</span>
-            <PipelineBadge label="VRAM Hot-Swap" color="#fb923c" />
+            <PipelineBadge label="VRAM Hot-Swap" color="#4f46e5" />
           </div>
 
           {/* Backend status */}
-          <div className="ml-auto flex items-center gap-2">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                pipelineMode === 'offline' ? 'bg-red-500' : 'bg-emerald-400 animate-pulse'
-              }`}
-            />
-            <span className="text-[10px] text-white/35">
-              {pipelineMode === null
-                ? 'Connecting…'
-                : pipelineMode === 'offline'
-                ? 'Backend offline'
-                : pipelineMode === 'real'
-                ? '🔬 Real pipeline'
-                : '🧪 Mock pipeline'}
-            </span>
-          </div>
+          {pipelineMode === 'offline' && (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              <span className="text-[10px] text-white/35">Backend offline</span>
+            </div>
+          )}
         </div>
       </header>
 
@@ -149,7 +148,7 @@ export default function App() {
         {error && (
           <div
             className="flex items-start gap-3 p-4 rounded-xl border animate-fade-up"
-            style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}
+            style={{ background: 'rgba(239,68,68,0.07)', borderColor: 'rgba(220,38,38,0.24)' }}
           >
             <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -171,9 +170,12 @@ export default function App() {
             {/* Metadata bar */}
             <div
               className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-[10px] text-white/40 animate-fade-up"
-              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}
+              style={{
+                background: 'linear-gradient(90deg, rgba(130,49,142,0.095), rgba(22,97,171,0.090))',
+                border: '1px solid rgba(22,97,171,0.24)',
+              }}
             >
-              <Zap size={11} className="text-indigo-400 flex-shrink-0" />
+              <Zap size={11} style={{ color: '#82318e' }} className="flex-shrink-0" />
               <span className="font-semibold text-white/60">Prompt:</span>
               <span className="italic truncate">&quot;{results.metadata?.prompt}&quot;</span>
               <span className="ml-auto flex-shrink-0">
@@ -201,7 +203,7 @@ export default function App() {
 
             {/* Divergence summary (2+ models) */}
             {activeModelKeys.length >= 2 && (
-              <DivergenceSummary results={results} />
+              <CrossModelVisuals results={results} />
             )}
           </>
         ) : (
@@ -210,12 +212,14 @@ export default function App() {
       </main>
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-white/[0.05] py-4 px-6">
+      <footer className="border-t border-white/[0.05] py-4 px-6"
+        style={{ background: 'rgba(255,255,255,0.82)' }}
+      >
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between text-[10px] text-white/20">
           <span>
-            SAE Feature Dashboard · Powered by{' '}
-            <span className="text-violet-400/60">TransformerLens</span> &{' '}
-            <span className="text-emerald-400/60">SAELens</span>
+            Fangcun AI · Powered by{' '}
+            <span style={{ color: '#82318e' }}>LLM</span> &{' '}
+            <span style={{ color: '#1661ab' }}>XAI</span>
           </span>
           <span className="flex items-center gap-1">
             <Cpu size={9} /> Sequential VRAM Hot-Swap Strategy
@@ -248,13 +252,21 @@ function EmptyState({ hasModels }) {
   return (
     <div
       className="flex flex-col items-center justify-center py-20 text-center animate-fade-up rounded-2xl"
-      style={{ background: 'rgba(255,255,255,0.015)', border: '1px dashed rgba(255,255,255,0.07)' }}
+      style={{
+        background:
+          'linear-gradient(135deg, rgba(255,255,255,0.94), rgba(239,246,255,0.96)), linear-gradient(135deg, rgba(130,49,142,0.14), rgba(22,97,171,0.14))',
+        border: '1px dashed rgba(22,97,171,0.34)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75)',
+      }}
     >
       <div
         className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-        style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(167,139,250,0.1))' }}
+        style={{
+          background: 'linear-gradient(135deg, rgba(130,49,142,0.18), rgba(22,97,171,0.16))',
+          border: '1px solid rgba(130,49,142,0.30)',
+        }}
       >
-        <Brain size={28} className="text-indigo-400 opacity-60" />
+        <img src={fangcunLogo} alt="Fangcun AI" className="h-11 w-11 object-contain" />
       </div>
 
       <h3 className="text-base font-bold text-white/50 mb-1">
@@ -262,19 +274,19 @@ function EmptyState({ hasModels }) {
       </h3>
       <p className="text-sm text-white/25 max-w-sm leading-relaxed">
         {hasModels
-          ? 'Click "Run Comparison" to extract SAE features via TransformerLens & SAELens.'
+          ? 'Click "Run Comparison" to extract SAE features via LLM & XAI.'
           : 'Click "Add Model" in the control panel to select up to 3 LLMs, then hit Run Comparison.'}
       </p>
 
       {/* Pipeline diagram */}
       <div className="mt-8 flex items-center gap-3 text-[11px] text-white/25">
-        <PipelineStep emoji="🔬" label="TransformerLens" sublabel="Hook activations" color="#a78bfa" />
+        <PipelineStep emoji="🔬" label="LLM" sublabel="Hook activations" color="#82318e" />
         <Arrow />
-        <PipelineStep emoji="✨" label="SAELens" sublabel="Encode features" color="#34d399" />
+        <PipelineStep emoji="✨" label="XAI" sublabel="Encode features" color="#1661ab" />
         <Arrow />
-        <PipelineStep emoji="📊" label="Reports" sublabel="Global + Per-token" color="#60a5fa" />
+        <PipelineStep emoji="📊" label="Reports" sublabel="Global + Per-token" color="#4f46e5" />
         <Arrow />
-        <PipelineStep emoji="🗑️" label="VRAM Clear" sublabel="Hot-swap" color="#fb923c" />
+        <PipelineStep emoji="🗑️" label="VRAM Clear" sublabel="Hot-swap" color="#1661ab" />
       </div>
     </div>
   );
@@ -298,7 +310,7 @@ function PipelineStep({ emoji, label, sublabel, color }) {
 function Arrow() {
   return (
     <svg width="20" height="12" viewBox="0 0 20 12" fill="none" className="opacity-20 flex-shrink-0">
-      <path d="M0 6h16M12 2l4 4-4 4" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M0 6h16M12 2l4 4-4 4" stroke="#1661ab" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

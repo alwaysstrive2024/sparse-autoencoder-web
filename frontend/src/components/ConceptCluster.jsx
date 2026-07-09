@@ -35,8 +35,13 @@ export default function ConceptCluster({ modelData, modelColor }) {
   const CY = 150;
   const RADIUS = 102;
 
-  const maxAct = useMemo(
-    () => Math.max(...concepts.map((c) => c.max_activation), 1),
+  const activationScale = useMemo(
+    () => {
+      const values = concepts.map((c) => Number(c.max_activation ?? 0));
+      const min = values.length ? Math.min(...values) : 0;
+      const max = values.length ? Math.max(...values) : 1;
+      return { min, max, spread: Math.max(max - min, 0.001) };
+    },
     [concepts]
   );
 
@@ -100,7 +105,7 @@ export default function ConceptCluster({ modelData, modelColor }) {
             cy={CY}
             r={RADIUS * r}
             fill="none"
-            stroke="rgba(255,255,255,0.045)"
+            stroke="rgba(22,97,171,0.22)"
             strokeWidth={1}
             strokeDasharray="3 5"
           />
@@ -111,8 +116,10 @@ export default function ConceptCluster({ modelData, modelColor }) {
           const angle = (i / concepts.length) * 2 * Math.PI - Math.PI / 2;
           const nx = CX + RADIUS * Math.cos(angle);
           const ny = CY + RADIUS * Math.sin(angle);
-          const norm = concept.max_activation / maxAct;
-          const nodeR = 5 + norm * 11;
+          const rankNorm = concepts.length > 1 ? 1 - i / (concepts.length - 1) : 1;
+          const activationNorm = (Number(concept.max_activation ?? 0) - activationScale.min) / activationScale.spread;
+          const norm = Math.max(0, Math.min(1, activationNorm || rankNorm));
+          const nodeR = 4 + Math.pow(norm, 1.25) * 16;
           const isHovered = hoveredIdx === i;
 
           // Label position: push outward beyond node
@@ -136,8 +143,8 @@ export default function ConceptCluster({ modelData, modelColor }) {
                 x2={nx}
                 y2={ny}
                 stroke={modelColor.accent}
-                strokeWidth={isHovered ? 2 : 0.8 + norm * 1.4}
-                strokeOpacity={isHovered ? 0.9 : 0.25 + norm * 0.5}
+                strokeWidth={isHovered ? 2.4 : 0.7 + norm * 2.0}
+                strokeOpacity={isHovered ? 0.95 : 0.38 + norm * 0.48}
                 style={{ transition: 'stroke-width 0.2s, stroke-opacity 0.2s' }}
               />
 
@@ -148,7 +155,7 @@ export default function ConceptCluster({ modelData, modelColor }) {
                   cy={ny}
                   r={nodeR + 4}
                   fill={modelColor.accent}
-                  fillOpacity={0.08}
+                  fillOpacity={0.14}
                   className="animate-pulse-slow"
                 />
               )}
@@ -159,10 +166,10 @@ export default function ConceptCluster({ modelData, modelColor }) {
                 cy={ny}
                 r={isHovered ? nodeR + 2 : nodeR}
                 fill={modelColor.accent}
-                fillOpacity={isHovered ? 0.75 : 0.18 + norm * 0.55}
+                fillOpacity={isHovered ? 0.84 : 0.24 + norm * 0.58}
                 stroke={modelColor.accent}
                 strokeWidth={isHovered ? 2 : 1}
-                strokeOpacity={isHovered ? 1 : 0.5 + norm * 0.4}
+                strokeOpacity={isHovered ? 1 : 0.65 + norm * 0.3}
                 style={{ transition: 'r 0.2s, fill-opacity 0.2s' }}
               />
 
@@ -172,9 +179,9 @@ export default function ConceptCluster({ modelData, modelColor }) {
                 y={ly}
                 textAnchor={labelAnchor}
                 dominantBaseline="middle"
-                fill="white"
-                fillOpacity={isHovered ? 0.95 : 0.45 + norm * 0.4}
-                fontSize={isHovered ? 8.5 : 7.5}
+                fill="#172033"
+                fillOpacity={isHovered ? 1 : 0.68 + norm * 0.28}
+                fontSize={isHovered ? 9.5 : 8.5}
                 fontFamily="'Outfit', sans-serif"
                 fontWeight={isHovered ? '600' : '400'}
                 style={{ transition: 'fill-opacity 0.2s, font-size 0.2s', userSelect: 'none' }}
@@ -193,18 +200,18 @@ export default function ConceptCluster({ modelData, modelColor }) {
                     width={104}
                     height={26}
                     rx={5}
-                    fill="#12141a"
+                    fill="#ffffff"
                     stroke={modelColor.accent}
                     strokeWidth={1}
-                    strokeOpacity={0.5}
+                    strokeOpacity={0.72}
                   />
                   <text
                     x={nx}
                     y={ny - nodeR - 22}
                     textAnchor="middle"
-                    fill="white"
-                    fillOpacity={0.9}
-                    fontSize={7}
+                    fill="#172033"
+                    fillOpacity={1}
+                    fontSize={8}
                     fontFamily="'JetBrains Mono', monospace"
                   >
                     #{concept.feature_id} · max {concept.max_activation.toFixed(3)}
@@ -214,7 +221,7 @@ export default function ConceptCluster({ modelData, modelColor }) {
                     y={ny - nodeR - 12}
                     textAnchor="middle"
                     fill={modelColor.text}
-                    fontSize={7.5}
+                    fontSize={8.5}
                     fontFamily="'Outfit', sans-serif"
                   >
                     {concept.concept_label}
@@ -239,21 +246,21 @@ export default function ConceptCluster({ modelData, modelColor }) {
           cy={CY}
           r={26}
           fill={modelColor.accent}
-          fillOpacity={0.15}
+          fillOpacity={0.22}
           stroke={modelColor.accent}
           strokeWidth={1.5}
-          strokeOpacity={0.7}
+          strokeOpacity={0.88}
         />
-        <circle cx={CX} cy={CY} r={22} fill={modelColor.accent} fillOpacity={0.08} />
+        <circle cx={CX} cy={CY} r={22} fill={modelColor.accent} fillOpacity={0.14} />
 
         {/* Center text */}
         <text
           x={CX}
           y={CY - 5}
           textAnchor="middle"
-          fill="white"
-          fillOpacity={0.85}
-          fontSize={7}
+          fill="#172033"
+          fillOpacity={1}
+          fontSize={8}
           fontFamily="'Outfit', sans-serif"
           fontWeight="700"
           letterSpacing="0.06em"
@@ -266,7 +273,7 @@ export default function ConceptCluster({ modelData, modelColor }) {
           y={CY + 6}
           textAnchor="middle"
           fill={modelColor.text}
-          fontSize={6.5}
+          fontSize={7.5}
           fontFamily="'Outfit', sans-serif"
         >
               {shortPrompt}
@@ -281,11 +288,11 @@ export default function ConceptCluster({ modelData, modelColor }) {
       <div className="mt-1 flex flex-col items-center justify-center gap-1 text-[10px] text-white/30">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: modelColor.accent, opacity: 0.4 }} />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: modelColor.accent, opacity: 0.35 }} />
             Low activation
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded-full" style={{ background: modelColor.accent, opacity: 0.85 }} />
+            <span className="w-4 h-4 rounded-full" style={{ background: modelColor.accent, opacity: 0.88 }} />
             High activation
           </span>
         </div>

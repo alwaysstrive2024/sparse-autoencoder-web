@@ -10,7 +10,10 @@ import { getModelColor } from '../constants';
  */
 export default function DivergenceSummary({ results }) {
   const { metadata, models_data } = results;
-  const modelKeys = metadata?.selected_models ?? [];
+  const modelKeys = useMemo(
+    () => metadata?.selected_models ?? [],
+    [metadata?.selected_models]
+  );
 
   // For each model, build a Map<concept_label → max_activation> for global features
   const modelConceptMaps = useMemo(() => {
@@ -25,7 +28,7 @@ export default function DivergenceSummary({ results }) {
       }
       return { key, map };
     });
-  }, [results]); // eslint-disable-line
+  }, [modelKeys, models_data]);
 
   // Collect all labels
   const allLabels = useMemo(() => {
@@ -75,7 +78,7 @@ export default function DivergenceSummary({ results }) {
       <div className="flex items-center gap-3 mb-5">
         <div
           className="w-1 h-5 rounded-full"
-          style={{ background: 'linear-gradient(180deg, #f59e0b, #ef4444, #8b5cf6)' }}
+          style={{ background: 'linear-gradient(180deg, #82318e, #4f46e5, #1661ab)' }}
         />
         <div>
           <h2 className="text-sm font-bold text-white">Concept Divergence Summary</h2>
@@ -131,16 +134,16 @@ export default function DivergenceSummary({ results }) {
         <div
           className="rounded-xl p-4"
           style={{
-            background: 'rgba(99,102,241,0.07)',
-            border: '1px solid rgba(99,102,241,0.25)',
+            background: 'linear-gradient(135deg, rgba(130,49,142,0.12), rgba(22,97,171,0.11))',
+            border: '1px solid rgba(22,97,171,0.32)',
           }}
         >
           <div className="flex items-center gap-1.5 mb-3">
             <span
               className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #6366f1, #a78bfa)' }}
+              style={{ background: 'linear-gradient(135deg, #82318e, #1661ab)' }}
             />
-            <span className="text-[11px] font-bold text-indigo-300">
+            <span className="text-[11px] font-bold" style={{ color: '#6f237a' }}>
               Shared by All Models
             </span>
           </div>
@@ -155,11 +158,11 @@ export default function DivergenceSummary({ results }) {
                   label={label}
                   value={avgVal}
                   color={{
-                    accent: '#6366f1',
-                    text: '#a5b4fc',
-                    bg: 'rgba(99,102,241,0.18)',
-                    border: 'rgba(99,102,241,0.4)',
-                    gradientBar: 'linear-gradient(90deg,#4f46e5,#6366f1,#a78bfa)',
+                    accent: '#82318e',
+                    text: '#6f237a',
+                    bg: 'rgba(130,49,142,0.17)',
+                    border: 'rgba(130,49,142,0.38)',
+                    gradientBar: 'linear-gradient(90deg,#5f1f69,#82318e,#1661ab)',
                   }}
                   shared
                 />
