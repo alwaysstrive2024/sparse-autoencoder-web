@@ -102,6 +102,8 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",   # Vite 本地开发服务器
     "http://127.0.0.1:5173",
+    "http://localhost:5174",   # Vite fallback when 5173 is occupied
+    "http://127.0.0.1:5174",
     "http://localhost:8080",   # 打包静态托管后的服务器
     "http://127.0.0.1:8080",
 ]
@@ -192,6 +194,11 @@ async def analyze(request: AnalyzeRequest):
         print(f"[HOT-SWAP] ✅ '{model_key}' — {time.time() - t0:.2f}s")
         vram_clear()
 
+    cross_model_visualization = _pipeline.build_cross_model_visualization(
+        models_data,
+        request.selected_models,
+    )
+
     return {
         "metadata": {
             "prompt":          prompt,
@@ -200,6 +207,7 @@ async def analyze(request: AnalyzeRequest):
             "pipeline_mode":   "real" if FULL_PIPELINE else "mock",
         },
         "models_data": models_data,
+        "cross_model_visualization": cross_model_visualization,
     }
 
 

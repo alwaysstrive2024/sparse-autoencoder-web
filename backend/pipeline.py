@@ -399,6 +399,254 @@ def _build_reports(
 
     return fired_features_summary, token_level_firings
 
+
+def _build_visualization_data(
+    fired_features_summary: List[Dict[str, Any]],
+    token_level_firings: List[Dict[str, Any]],
+    top_n: int = 50,
+    graph_n: int = 28,
+) -> Dict[str, Any]:
+    """
+    Pre-aggregate compact structures for frontend visualizations.
+
+    This intentionally does not perform dimensionality reduction or any extra
+    model work. It only reshapes the existing report data into bounded-size
+    sparse matrices and co-activation edges.
+    """
+    top_features = fired_features_summary[:top_n]
+    top_ids = {int(f["feature_id"]) for f in top_features}
+    graph_ids = {int(f["feature_id"]) for f in fired_features_summary[:graph_n]}
+
+    tokens = [
+        {"token_index": t["token_index"], "token_string": t["token_string"]}
+        for t in token_level_firings
+    ]
+    token_count = len(tokens)
+
+    by_feature: Dict[int, List[Dict[str, Any]]] = {fid: [] for fid in top_ids}
+    cells: List[Dict[str, Any]] = []
+    edge_stats: Dict[Tuple[int, int], Dict[str, Any]] = {}
+
+    for token in token_level_firings:
+        token_index = int(token["token_index"])
+        active_for_graph: List[Tuple[int, float]] = []
+
+        for feat in token.get("top_50_features", []):
+            fid = int(feat["feature_id"])
+            activation = float(feat["activation"])
+
+            if fid in top_ids:
+                cell = {
+                    "token_index": token_index,
+                    "feature_id": fid,
+                    "activation": round(activation, 4),
+                }
+                cells.append(cell)
+                by_feature[fid].append(cell)
+
+            if fid in graph_ids:
+                active_for_graph.append((fid, activation))
+
+        active_for_graph.sort(key=lambda x: x[1], reverse=True)
+        active_for_graph = active_for_graph[:8]
+        for i in range(len(active_for_graph)):
+            for j in range(i + 1, len(active_for_graph)):
+                a, av = active_for_graph[i]
+                b, bv = active_for_graph[j]
+                source, target = (a, b) if a < b else (b, a)
+                key = (source, target)
+                stat = edge_stats.setdefault(
+                    key,
+                    {"source": source, "target": target, "count": 0, "strength": 0.0},
+                )
+                stat["count"] += 1
+                stat["strength"] += min(av, bv)
+
+    landscape = []
+    for rank, feat in enumerate(top_features):
+        fid = int(feat["feature_id"])
+        values = by_feature.get(fid, [])
+        peak = max(values, key=lambda x: x["activation"], default=None)
+        peak_index = peak["token_index"] if peak else -1
+        peak_token = tokens[peak_index]["token_string"] if 0 <= peak_index < token_count else ""
+        landscape.append({
+            "rank": rank + 1,
+            "feature_id": fid,
+            "concept_label": feat["concept_label"],
+            "max_activation": feat["max_activation"],
+            "avg_activation": feat["avg_activation"],
+            "sum_activation": feat.get("sum_activation", 0),
+            "fired_token_count": feat["fired_token_count"],
+            "peak_token_index": peak_index,
+            "peak_token": peak_token,
+        })
+
+    stream_series = []
+    for feat in top_features[:12]:
+        fid = int(feat["feature_id"])
+        values = [0.0] * token_count
+        for cell in by_feature.get(fid, []):
+            idx = cell["token_index"]
+            if 0 <= idx < token_count:
+                values[idx] = cell["activation"]
+        stream_series.append({
+            "feature_id": fid,
+            "concept_label": feat["concept_label"],
+            "max_activation": feat["max_activation"],
+            "values": values,
+        })
+
+    graph_nodes = [
+        {
+            "id": int(feat["feature_id"]),
+            "label": feat["concept_label"],
+            "max_activation": feat["max_activation"],
+            "avg_activation": feat["avg_activation"],
+            "fired_token_count": feat["fired_token_count"],
+        }
+        for feat in fired_features_summary[:graph_n]
+    ]
+    graph_links = sorted(
+        edge_stats.values(),
+        key=lambda x: (x["count"], x["strength"]),
+        reverse=True,
+    )[:80]
+    for link in graph_links:
+        link["strength"] = round(float(link["strength"]), 4)
+
+    treemap = [
+        {
+            "feature_id": int(feat["feature_id"]),
+            "concept_label": feat["concept_label"],
+            "size": max(float(feat.get("sum_activation", 0)), float(feat["max_activation"])),
+            "max_activation": feat["max_activation"],
+            "fired_token_count": feat["fired_token_count"],
+        }
+        for feat in top_features[:30]
+    ]
+
+    return {
+        "tokens": tokens,
+        "features": top_features,
+        "landscape": landscape,
+        "heatmap": {
+            "features": top_features[:30],
+            "cells": cells,
+        },
+        "stream": {
+            "series": stream_series,
+            "tokens": tokens,
+        },
+        "coactivation_graph": {
+            "nodes": graph_nodes,
+            "links": graph_links,
+        },
+        "treemap": treemap,
+        "limits": {
+            "top_n": top_n,
+            "graph_n": graph_n,
+            "cell_count": len(cells),
+            "link_count": len(graph_links),
+        },
+    }
+
+
+def build_cross_model_visualization(
+    models_data: Dict[str, Any],
+    model_keys: List[str],
+    top_n: int = 40,
+) -> Dict[str, Any]:
+    """Build bounded cross-model concept overlap data for frontend views."""
+    concept_index: Dict[str, Dict[str, Any]] = {}
+    unique_by_model: Dict[str, List[Dict[str, Any]]] = {key: [] for key in model_keys}
+
+    for model_key in model_keys:
+        features = (
+            models_data.get(model_key, {})
+            .get("report_1_global", {})
+            .get("fired_features_summary", [])
+        )[:top_n]
+        for feat in features:
+            label = str(feat.get("concept_label", f"Concept {feat.get('feature_id')}")).strip()
+            canonical = " ".join(label.lower().split())
+            if not canonical:
+                canonical = f"feature:{feat.get('feature_id')}"
+            bucket = concept_index.setdefault(canonical, {"label": label, "records": []})
+            bucket["records"].append({
+                "model_key": model_key,
+                "feature_id": int(feat["feature_id"]),
+                "concept_label": label,
+                "max_activation": feat["max_activation"],
+                "avg_activation": feat["avg_activation"],
+                "fired_token_count": feat["fired_token_count"],
+            })
+
+    shared_all: List[Dict[str, Any]] = []
+    partial_overlap: List[Dict[str, Any]] = []
+    alignment_nodes: List[Dict[str, Any]] = []
+    alignment_links: List[Dict[str, Any]] = []
+
+    for canonical, bucket in concept_index.items():
+        records = bucket["records"]
+        model_set = {r["model_key"] for r in records}
+        avg_activation = sum(float(r["max_activation"]) for r in records) / len(records)
+        item = {
+            "concept_key": canonical,
+            "label": bucket["label"],
+            "model_count": len(model_set),
+            "avg_activation": round(avg_activation, 4),
+            "records": records,
+        }
+
+        if len(model_set) == len(model_keys):
+            shared_all.append(item)
+        elif len(model_set) > 1:
+            partial_overlap.append(item)
+        elif records:
+            unique_by_model[records[0]["model_key"]].append(item)
+
+        if len(model_set) > 1:
+            ordered = [
+                next((r for r in records if r["model_key"] == key), None)
+                for key in model_keys
+            ]
+            ordered = [r for r in ordered if r]
+            for record in ordered:
+                alignment_nodes.append({
+                    "id": f"{record['model_key']}::{canonical}",
+                    "concept_key": canonical,
+                    **record,
+                })
+            for left, right in zip(ordered, ordered[1:]):
+                alignment_links.append({
+                    "source": f"{left['model_key']}::{canonical}",
+                    "target": f"{right['model_key']}::{canonical}",
+                    "concept_key": canonical,
+                    "label": bucket["label"],
+                    "strength": round(
+                        (float(left["max_activation"]) + float(right["max_activation"])) / 2,
+                        4,
+                    ),
+                })
+
+    shared_all.sort(key=lambda x: x["avg_activation"], reverse=True)
+    partial_overlap.sort(key=lambda x: (x["model_count"], x["avg_activation"]), reverse=True)
+    for model_key in model_keys:
+        unique_by_model[model_key].sort(key=lambda x: x["avg_activation"], reverse=True)
+        unique_by_model[model_key] = unique_by_model[model_key][:12]
+
+    return {
+        "shared_all": shared_all[:16],
+        "partial_overlap": partial_overlap[:20],
+        "unique_by_model": unique_by_model,
+        "alignment": {
+            "nodes": alignment_nodes[:80],
+            "links": alignment_links[:80],
+        },
+        "model_keys": model_keys,
+        "total_unique_concepts": len(concept_index),
+    }
+
 # Mock pipeline
 def _mock_analyse_model(
     prompt: str, model_key: str, top_k: int
@@ -493,6 +741,12 @@ def _mock_analyse_model(
     print(f"[MOCK | {model_key}] ✅ {len(fired_features_summary)} features, "
           f"{len(tokens)} tokens")
 
+    visualization_data = _build_visualization_data(
+        fired_features_summary,
+        token_level_firings,
+        top_n=max(50, top_k),
+    )
+
     return {
         "model_metadata": {
             "model_name":      cfg["display_name"],
@@ -509,6 +763,7 @@ def _mock_analyse_model(
         },
         "report_1_global":    {"fired_features_summary": fired_features_summary},
         "report_2_per_token": {"token_level_firings": token_level_firings},
+        "visualization_data": visualization_data,
     }
 
 
@@ -628,6 +883,12 @@ def _real_analyse_model(
     print(f"[REAL | {model_key}] ✅ Done — "
           f"{len(fired_features_summary)} features, {len(token_strs)} tokens")
 
+    visualization_data = _build_visualization_data(
+        fired_features_summary,
+        token_level_firings,
+        top_n=max(50, top_k),
+    )
+
     return {
         "model_metadata": {
             "model_name":      cfg["display_name"],
@@ -644,6 +905,7 @@ def _real_analyse_model(
         },
         "report_1_global":    {"fired_features_summary": fired_features_summary},
         "report_2_per_token": {"token_level_firings": token_level_firings},
+        "visualization_data": visualization_data,
     }
 
 
