@@ -25,5 +25,5 @@ debug_test.py
 *.sln
 *.sw?
 
-*.json
-
+backend/concept2token_8M/
+backend/concept2token/
