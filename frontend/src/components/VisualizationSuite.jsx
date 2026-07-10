@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import ConceptCluster from './ConceptCluster';
 import EChartCanvas from './EChartCanvas';
+import FloatingTooltip from './FloatingTooltip';
 
 function hexToRgba(hex, alpha) {
   const safe = typeof hex === 'string' && hex.startsWith('#') ? hex : '#1661ab';
@@ -678,7 +679,7 @@ function FeatureHeatmapPanel({ features, tokens, cells, modelColor, expanded = f
 }
 
 function FeatureHeatmapGrid({ features, tokens, cells, modelColor, expanded = false }) {
-  const [selectedCell, setSelectedCell] = useState(null);
+  const [hoveredCell, setHoveredCell] = useState(null);
   const { cellMap, rowStats, sortedValues } = useMemo(() => {
     const cellMap = new Map(cells.map((cell) => [`${cell.feature_id}:${cell.token_index}`, cell.activation ?? 0]));
     const rowStats = new Map();
@@ -699,10 +700,10 @@ function FeatureHeatmapGrid({ features, tokens, cells, modelColor, expanded = fa
     return { cellMap, rowStats, sortedValues };
   }, [cells, features, tokens]);
 
-  const selectedFeature = selectedCell ? features[selectedCell.row] : null;
-  const selectedToken = selectedCell ? tokens[selectedCell.col] : null;
-  const selectedActivation = selectedFeature && selectedToken
-    ? cellMap.get(`${selectedFeature.feature_id}:${selectedToken.token_index}`) ?? 0
+  const hoveredFeature = hoveredCell ? features[hoveredCell.row] : null;
+  const hoveredToken = hoveredCell ? tokens[hoveredCell.col] : null;
+  const hoveredActivation = hoveredFeature && hoveredToken
+    ? cellMap.get(`${hoveredFeature.feature_id}:${hoveredToken.token_index}`) ?? 0
     : 0;
 
   const getCellRatio = (feature, activation) => {
@@ -759,25 +760,31 @@ function FeatureHeatmapGrid({ features, tokens, cells, modelColor, expanded = fa
             {tokens.map((token, col) => {
               const activation = cellMap.get(`${feature.feature_id}:${token.token_index}`) ?? 0;
               const ratio = getCellRatio(feature, activation);
-              const selected = selectedCell?.row === row && selectedCell?.col === col;
+              const hovered = hoveredCell?.row === row && hoveredCell?.col === col;
               return (
                 <button
                   key={`${feature.feature_id}:${token.token_index}`}
                   type="button"
-                  onClick={() => setSelectedCell({ row, col })}
+                  onMouseEnter={(event) => setHoveredCell({ row, col, x: event.clientX, y: event.clientY })}
+                  onMouseMove={(event) => setHoveredCell({ row, col, x: event.clientX, y: event.clientY })}
+                  onMouseLeave={() => setHoveredCell(null)}
+                  onFocus={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setHoveredCell({ row, col, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                  }}
+                  onBlur={() => setHoveredCell(null)}
                   className="rounded-md border px-1.5 py-1 text-left transition-transform hover:scale-[1.03]"
                   style={{
                     background: activation > 0
                       ? `linear-gradient(135deg, ${hexToRgba(modelColor.accent, 0.06 + ratio * 0.62)}, ${hexToRgba(modelColor.accent, 0.03 + ratio * 0.22)} 58%, rgba(255,255,255,0.90))`
                       : 'rgba(226,232,240,0.26)',
-                    borderColor: selected
+                    borderColor: hovered
                       ? modelColor.accent
                       : activation > 0
                         ? hexToRgba(modelColor.accent, 0.12 + ratio * 0.34)
                         : 'rgba(148,163,184,0.14)',
-                    boxShadow: selected ? `0 0 0 2px ${hexToRgba(modelColor.accent, 0.14)}` : 'none',
+                    boxShadow: hovered ? `0 0 0 2px ${hexToRgba(modelColor.accent, 0.14)}` : 'none',
                   }}
-                  title={`${feature.concept_label}\ntoken: ${token.token_string}\nactivation: ${activation.toFixed(4)}`}
                 >
                   <div
                     className="mono truncate text-[8px] font-bold"
@@ -792,19 +799,27 @@ function FeatureHeatmapGrid({ features, tokens, cells, modelColor, expanded = fa
         ))}
       </div>
 
-      {selectedCell && selectedFeature && selectedToken && (
-        <div
-          className="mt-2 rounded-lg border px-3 py-2 text-[10px]"
-          style={{ background: 'rgba(255,255,255,0.78)', borderColor: 'rgba(22,97,171,0.12)' }}
-        >
-          <span className="font-bold text-slate-700">{truncateLabel(selectedFeature.concept_label, 34)}</span>
-          <span className="mx-2 text-white/25">·</span>
-          <span className="mono text-white/40">{selectedToken.token_string}</span>
-          <span className="mx-2 text-white/25">·</span>
-          <span className="mono" style={{ color: modelColor.text }}>
-            feature #{selectedFeature.feature_id} · activation {selectedActivation.toFixed(4)}
-          </span>
-        </div>
+      {hoveredCell && hoveredFeature && hoveredToken && (
+        <FloatingTooltip x={hoveredCell.x} y={hoveredCell.y} color={modelColor} width={300}>
+          <div className="space-y-1.5">
+            <div className="truncate text-[12px] font-bold text-slate-800">
+              {hoveredFeature.concept_label}
+            </div>
+            <div className="mono truncate text-[9px] text-slate-500">
+              token: {hoveredToken.token_string}
+            </div>
+            <div className="grid grid-cols-2 gap-1 text-center">
+              <div className="rounded-md border px-2 py-1" style={{ background: hexToRgba(modelColor.accent, 0.08), borderColor: hexToRgba(modelColor.accent, 0.12) }}>
+                <div className="mono text-[10px] font-bold" style={{ color: modelColor.text }}>#{hoveredFeature.feature_id}</div>
+                <div className="text-[7px] uppercase tracking-wide text-slate-400">feature</div>
+              </div>
+              <div className="rounded-md border px-2 py-1" style={{ background: hexToRgba(modelColor.accent, 0.08), borderColor: hexToRgba(modelColor.accent, 0.12) }}>
+                <div className="mono text-[10px] font-bold" style={{ color: modelColor.text }}>{hoveredActivation.toFixed(4)}</div>
+                <div className="text-[7px] uppercase tracking-wide text-slate-400">activation</div>
+              </div>
+            </div>
+          </div>
+        </FloatingTooltip>
       )}
     </div>
   );

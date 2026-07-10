@@ -6,7 +6,7 @@ import ControlPanel from './components/ControlPanel';
 import ModelColumn from './components/ModelColumn';
 import CrossModelVisuals from './components/CrossModelVisuals';
 import LoadingOverlay from './components/LoadingOverlay';
-import fangcunLogo from '../fangcun logo.png';
+import fangcunLogo from '../fangcun_icon.svg';
 
 export default function App() {
   // ── State ────────────────────────────────────────────────────────────────

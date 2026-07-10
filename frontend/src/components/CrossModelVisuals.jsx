@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Boxes, GitCompareArrows, Maximize2, Search, Workflow, X } from 'lucide-react';
 import { getModelColor } from '../constants';
 import EChartCanvas from './EChartCanvas';
+import FloatingTooltip from './FloatingTooltip';
 
 function hexToRgba(hex, alpha) {
   const safe = typeof hex === 'string' && hex.startsWith('#') ? hex : '#1661ab';
@@ -378,7 +379,7 @@ function MatrixPanel({ concepts, modelKeys, expanded = false }) {
 }
 
 function MatrixGrid({ concepts, modelKeys, expanded = false }) {
-  const [selectedCell, setSelectedCell] = useState(null);
+  const [hoveredCell, setHoveredCell] = useState(null);
   const maxByModel = useMemo(() => new Map(modelKeys.map((key) => {
     const values = concepts
       .map((concept) => concept.records.find((item) => item.model_key === key)?.max_activation ?? 0)
@@ -386,10 +387,11 @@ function MatrixGrid({ concepts, modelKeys, expanded = false }) {
     return [key, Math.max(...values, 1)];
   })), [concepts, modelKeys]);
 
-  const selectedConcept = selectedCell ? concepts[selectedCell.row] : null;
-  const selectedRecord = selectedCell && selectedConcept
-    ? selectedConcept.records.find((record) => record.model_key === modelKeys[selectedCell.col])
+  const hoveredConcept = hoveredCell ? concepts[hoveredCell.row] : null;
+  const hoveredRecord = hoveredCell && hoveredConcept
+    ? hoveredConcept.records.find((record) => record.model_key === modelKeys[hoveredCell.col])
     : null;
+  const hoveredColor = hoveredCell ? getModelColor(hoveredCell.col) : null;
 
   return (
     <div className="min-h-0 flex-1 rounded-lg border bg-white/80 p-3" style={{ borderColor: 'rgba(130,49,142,0.12)' }}>
@@ -434,25 +436,31 @@ function MatrixGrid({ concepts, modelKeys, expanded = false }) {
               const record = concept.records.find((item) => item.model_key === key);
               const activation = record?.max_activation ?? 0;
               const ratio = activation > 0 ? Math.min(activation / (maxByModel.get(key) ?? 1), 1) : 0;
-              const selected = selectedCell?.row === row && selectedCell?.col === col;
+              const hovered = hoveredCell?.row === row && hoveredCell?.col === col;
               return (
                 <button
                   key={`${concept.concept_key}:${key}`}
                   type="button"
-                  onClick={() => setSelectedCell({ row, col })}
+                  onMouseEnter={(event) => setHoveredCell({ row, col, x: event.clientX, y: event.clientY })}
+                  onMouseMove={(event) => setHoveredCell({ row, col, x: event.clientX, y: event.clientY })}
+                  onMouseLeave={() => setHoveredCell(null)}
+                  onFocus={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setHoveredCell({ row, col, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                  }}
+                  onBlur={() => setHoveredCell(null)}
                   className="relative overflow-hidden rounded-md border px-2 py-1.5 text-left transition-transform hover:scale-[1.02]"
                   style={{
                     background: record
                       ? `linear-gradient(135deg, ${hexToRgba(color.accent, 0.18 + ratio * 0.58)}, rgba(255,255,255,0.82))`
                       : 'rgba(226,232,240,0.30)',
-                    borderColor: selected
+                    borderColor: hovered
                       ? color.accent
                       : record
                         ? hexToRgba(color.accent, 0.22 + ratio * 0.30)
                         : 'rgba(148,163,184,0.16)',
-                    boxShadow: selected ? `0 0 0 2px ${hexToRgba(color.accent, 0.14)}` : 'none',
+                    boxShadow: hovered ? `0 0 0 2px ${hexToRgba(color.accent, 0.14)}` : 'none',
                   }}
-                  title={`${concept.label}\n${key}: ${record ? `#${record.feature_id} max ${Number(activation).toFixed(4)}` : '0.00'}`}
                 >
                   {record ? (
                     <>
@@ -473,21 +481,28 @@ function MatrixGrid({ concepts, modelKeys, expanded = false }) {
         ))}
       </div>
 
-      {selectedCell && selectedConcept && (
-        <div
-          className="mt-2 rounded-lg border px-3 py-2 text-[10px]"
-          style={{ background: 'rgba(255,255,255,0.78)', borderColor: 'rgba(130,49,142,0.12)' }}
-        >
-          <span className="font-bold text-slate-700">{truncateLabel(selectedConcept.label, 34)}</span>
-          <span className="mx-2 text-white/25">·</span>
-          <span className="mono text-white/40">{modelKeys[selectedCell.col]}</span>
-          <span className="mx-2 text-white/25">·</span>
-          <span className="mono" style={{ color: getModelColor(selectedCell.col).text }}>
-            {selectedRecord
-              ? `feature #${selectedRecord.feature_id} · max ${Number(selectedRecord.max_activation ?? 0).toFixed(4)}`
-              : '0.00'}
-          </span>
-        </div>
+      {hoveredCell && hoveredConcept && hoveredColor && (
+        <FloatingTooltip x={hoveredCell.x} y={hoveredCell.y} color={hoveredColor} width={300}>
+          <div className="space-y-1.5">
+            <div className="truncate text-[12px] font-bold text-slate-800">
+              {hoveredConcept.label}
+            </div>
+            <div className="mono truncate text-[9px] text-slate-500">
+              {modelKeys[hoveredCell.col]}
+            </div>
+            {hoveredRecord ? (
+              <div className="grid grid-cols-3 gap-1 text-center">
+                <MetricPill label="feature" value={`#${hoveredRecord.feature_id}`} color={hoveredColor} />
+                <MetricPill label="max" value={Number(hoveredRecord.max_activation ?? 0).toFixed(2)} color={hoveredColor} />
+                <MetricPill label="tokens" value={hoveredRecord.fired_token_count ?? 0} color={hoveredColor} />
+              </div>
+            ) : (
+              <div className="mono rounded-md bg-slate-100 px-2 py-1 text-center text-[11px] font-bold text-slate-500">
+                0.00
+              </div>
+            )}
+          </div>
+        </FloatingTooltip>
       )}
     </div>
   );

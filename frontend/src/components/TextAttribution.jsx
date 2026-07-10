@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import FloatingTooltip from './FloatingTooltip';
 
 /**
  * TextAttribution
@@ -10,7 +11,7 @@ import { useMemo, useState } from 'react';
  *   modelColor — colour tokens from constants.js
  */
 export default function TextAttribution({ modelData, modelColor }) {
-  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const [hoveredToken, setHoveredToken] = useState(null);
 
   const tokenData = useMemo(() => {
     const firings = modelData?.report_2_per_token?.token_level_firings ?? [];
@@ -65,7 +66,7 @@ export default function TextAttribution({ modelData, modelColor }) {
         aria-label="Token attribution map"
       >
         {tokenData.map((t) => {
-          const isHovered = hoveredIdx === t.index;
+          const isHovered = hoveredToken?.token?.index === t.index;
           const alpha = 0.16 + t.gradNorm * 0.68;          // lightest 16% → brightest 84%
           const borderAlpha = 0.28 + t.gradNorm * 0.62;    // rank-based step gradient
 
@@ -81,48 +82,43 @@ export default function TextAttribution({ modelData, modelColor }) {
                 transition: 'background 0.15s ease, color 0.15s ease',
                 boxShadow: isHovered ? `0 0 12px ${hexToRgba(modelColor.accent, 0.52)}` : 'none',
               }}
-              onMouseEnter={() => setHoveredIdx(t.index)}
-              onMouseLeave={() => setHoveredIdx(null)}
+              onMouseEnter={(event) => setHoveredToken({ token: t, x: event.clientX, y: event.clientY })}
+              onMouseMove={(event) => setHoveredToken({ token: t, x: event.clientX, y: event.clientY })}
+              onMouseLeave={() => setHoveredToken(null)}
+              onFocus={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setHoveredToken({ token: t, x: rect.left + rect.width / 2, y: rect.top });
+              }}
+              onBlur={() => setHoveredToken(null)}
+              tabIndex={0}
             >
               {t.token}
-
-              {/* Hover tooltip */}
-              {isHovered && (
-                <span
-                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-20
-                             flex flex-col items-center gap-0.5
-                             px-2.5 py-1.5 rounded-lg text-[10px] whitespace-nowrap shadow-xl"
-                  style={{
-                    background: '#111827ee',
-                    border: `1px solid ${hexToRgba(modelColor.accent, 0.45)}`,
-                    boxShadow: `0 4px 20px ${hexToRgba(modelColor.accent, 0.2)}`,
-                  }}
-                >
-                  <span className="mono font-bold" style={{ color: 'white' }}>
-                    &quot;{t.token}&quot; · act {t.peak.toFixed(4)}
-                  </span>
-                  <span style={{ color: modelColor.text }}>
-                    #{t.topFeatId} {t.topLabel}
-                  </span>
-                  {/* Activation heat bar */}
-                  <div
-                    className="w-full h-1 rounded-full mt-0.5"
-                    style={{ background: 'rgba(255,255,255,0.16)' }}
-                  >
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${t.norm * 100}%`,
-                        background: modelColor.gradientBar,
-                      }}
-                    />
-                  </div>
-                </span>
-              )}
             </span>
           );
         })}
       </div>
+
+      {hoveredToken && (
+        <FloatingTooltip x={hoveredToken.x} y={hoveredToken.y} color={modelColor} width={280}>
+          <div className="space-y-1">
+            <div className="mono text-[12px] font-bold text-slate-800">
+              &quot;{hoveredToken.token.token}&quot; · act {hoveredToken.token.peak.toFixed(4)}
+            </div>
+            <div className="truncate text-[10px] font-semibold" style={{ color: modelColor.text }}>
+              {hoveredToken.token.topFeatId != null ? `#${hoveredToken.token.topFeatId}` : '#—'} {hoveredToken.token.topLabel}
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${hoveredToken.token.norm * 100}%`,
+                  background: modelColor.gradientBar,
+                }}
+              />
+            </div>
+          </div>
+        </FloatingTooltip>
+      )}
 
       {/* Intensity scale legend */}
       <div className="mt-3 flex items-center gap-2">
