@@ -38,7 +38,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.4.hook_resid_pre",
         "hook_layer":    4,
-        "concept-json":  "gpt2_concept_to_token",  
     },
     "gpt2-small-l8": {
         "display_name":  "GPT-2(Layer 8)",
@@ -47,7 +46,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.8.hook_resid_pre",
         "hook_layer":    8,
-        "concept-json":  "gpt2_concept_to_token",  
     },
     "gpt2-small-l11": {
         "display_name":  "GPT-2(Layer 11)",
@@ -56,7 +54,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.11.hook_resid_pre",
         "hook_layer":    11,
-        "concept-json":  "gpt2_concept_to_token",  
     }, 
 
     # —— Google Gemma 3  ──────────────────────────────
@@ -69,7 +66,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    4,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "4-res-jb",
-        # "concept-json":  "gemma3_concepts",  # 放置 concept2token/gemma3_concepts.json 后取消注释
     }, 
     "gemma-3-l8": {
         "display_name":  "Gemma 3 (Layer 8)",
@@ -80,7 +76,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    8,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "8-res-jb",
-        # "concept-json":  "gemma3_concepts",  # 放置 concept2token/gemma3_concepts.json 后取消注释
     }, 
     "gemma-3-l12": {
         "display_name":  "Gemma 3 (Layer 12)",
@@ -91,7 +86,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    12,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "12-res-jb",
-        # "concept-json":  "gemma3_concepts",  # 放置 concept2token/gemma3_concepts.json 后取消注释
     },  
 
     # ── Google Gemma-4 E2B (decoderesearch SAEs) ──────────────────────────────
@@ -129,7 +123,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.4.hook_resid_post",
         "hook_layer":    4,
-        # "concept-json":  "llama32_1b_concepts",  
     },
     "llama-3.2-1b-l8": {
         "display_name":  "Llama 3.2 (Layer 8)",
@@ -138,7 +131,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.8.hook_resid_post",
         "hook_layer":    8,
-        # "concept-json":  "llama32_1b_concepts",  
     }, 
     "llama-3.2-1b-l12": {
         "display_name":  "Llama 3.2 (Layer 12)",
@@ -147,7 +139,6 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.12.hook_resid_post",
         "hook_layer":    12,
-        # "concept-json":  "llama32_1b_concepts",  
     },
 
    # ── Qwen 3.5 0.8B (decoderesearch SAEs) ──────────────────────────────────

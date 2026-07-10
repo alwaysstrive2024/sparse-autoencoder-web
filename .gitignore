@@ -24,3 +24,6 @@ debug_test.py
 *.njsproj
 *.sln
 *.sw?
+
+backend/concept2token_8M/
+backend/concept2token/

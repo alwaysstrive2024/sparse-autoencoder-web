@@ -1,7 +1,7 @@
 import { Download, Layers, GitBranch, Activity } from 'lucide-react';
-import ConceptCluster from './ConceptCluster';
 import FeatureBars from './FeatureBars';
 import TextAttribution from './TextAttribution';
+import VisualizationSuite from './VisualizationSuite';
 import { downloadJSON } from '../utils/download';
 
 /**
@@ -50,7 +50,7 @@ export default function ModelColumn({ modelKey, data, topK, modelColor }) {
       className="glass-card overflow-hidden flex flex-col animate-fade-up"
       style={{
         borderTop: `2px solid ${modelColor.accent}`,
-        boxShadow: `0 0 40px ${modelColor.glow}, 0 0 1px ${modelColor.accent}33`,
+        boxShadow: `0 18px 42px ${modelColor.glow}, 0 0 1px ${modelColor.accent}33`,
       }}
     >
       {/* ── Column Header ─────────────────────────────────────────────── */}
@@ -80,24 +80,11 @@ export default function ModelColumn({ modelKey, data, topK, modelColor }) {
             </div>
           </div>
 
-          {/* Pipeline mode pill */}
-          <span
-            className="mono text-[9px] px-2 py-1 rounded-lg font-semibold flex-shrink-0 whitespace-nowrap"
-            style={{
-              background: meta.pipeline_mode === 'real'
-                ? 'rgba(52,211,153,0.15)'
-                : 'rgba(251,146,60,0.12)',
-              color: meta.pipeline_mode === 'real' ? '#34d399' : '#fb923c',
-              border: `1px solid ${meta.pipeline_mode === 'real' ? 'rgba(52,211,153,0.3)' : 'rgba(251,146,60,0.25)'}`,
-            }}
-          >
-            {meta.pipeline_mode === 'real' ? '🔬 REAL' : '🧪 MOCK'}
-          </span>
         </div>
 
         {/* SAE info row */}
         <div className="mono text-[10px] text-white/30 flex flex-wrap gap-x-3 gap-y-0.5">
-          <span>SAE: {meta.sae_release}</span>
+          {/* <span>SAE: {meta.sae_release}</span> */}
           <span className="opacity-40">|</span>
           <span>d_model: {meta.d_model}</span>
         </div>
@@ -119,26 +106,26 @@ export default function ModelColumn({ modelKey, data, topK, modelColor }) {
         </div>
       </div>
 
-      {/* ── Concept Cluster ────────────────────────────────────────────── */}
+      {/* ── Visual Exploration ─────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-2">
         <SectionLabel
-          icon={<span className="text-[10px]">🧠</span>}
-          text="Concept Cluster"
+          icon={<Activity size={11} />}
+          text="Visual Exploration"
           color={modelColor}
         />
         <div className="mt-2">
-          <ConceptCluster modelData={data} modelColor={modelColor} />
+          <VisualizationSuite modelData={data} modelColor={modelColor} />
         </div>
       </div>
 
       {/* ── Token Firing Bars ──────────────────────────────────────────── */}
       <div
         className="mx-4 mb-3 p-3 rounded-xl"
-        style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.05)' }}
+        style={{ background: 'rgba(239,245,255,0.92)', border: '1px solid rgba(22,97,171,0.24)' }}
       >
         <SectionLabel
           icon={<span className="text-[10px]">⚡</span>}
-          text={`Top-${topK} SAE Feature Firings`}
+          text={`Top-${topK} Features`}
           color={modelColor}
         />
         <div className="mt-2.5">
@@ -149,7 +136,7 @@ export default function ModelColumn({ modelKey, data, topK, modelColor }) {
       {/* ── Text Attribution ───────────────────────────────────────────── */}
       <div
         className="mx-4 mb-4 p-3 rounded-xl"
-        style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}
+        style={{ background: 'rgba(255,255,255,0.94)', border: '1px solid rgba(130,49,142,0.22)' }}
       >
         <SectionLabel
           icon={<span className="text-[10px]">🎨</span>}
@@ -205,7 +192,7 @@ function DownloadButton({ id, label, onClick, color }) {
       className="flex-1 flex items-center justify-center gap-1.5 text-[10px] font-semibold
                  py-1.5 px-2 rounded-lg transition-all duration-150"
       style={{
-        background: 'rgba(255,255,255,0.04)',
+        background: 'rgba(255,255,255,0.86)',
         border: `1px solid ${color.border}`,
         color: color.text,
       }}
@@ -214,7 +201,7 @@ function DownloadButton({ id, label, onClick, color }) {
         e.currentTarget.style.boxShadow = `0 0 12px ${color.glow}`;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+        e.currentTarget.style.background = 'rgba(255,255,255,0.86)';
         e.currentTarget.style.boxShadow = 'none';
       }}
     >
