@@ -16,6 +16,7 @@ os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
 os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 
 import time
+import traceback
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
@@ -52,6 +53,7 @@ print("=" * 60 + "\n")
 # ── Inject dependency flags into pipeline ────────────────────────────────────
 import pipeline as _pipeline  # noqa: E402
 from config import vram_clear  # noqa: E402
+from preprocessing import preprocess_prompt_for_models  # noqa: E402
 from registry import MODEL_REGISTRY  # noqa: E402
 
 _pipeline.set_deps(
@@ -157,6 +159,7 @@ async def list_models():
                 "hook_point":   cache.get(key, {}).get("hook_point", "auto"),
                 "d_model":      cache.get(key, {}).get("d_model", "auto"),
                 "hf_model_name": cache.get(key, {}).get("hf_model_name", "auto"),
+                "chinese_input_policy": reg.get("chinese_input_policy", "allow_raw_zh"),
             }
             for key, reg in MODEL_REGISTRY.items()
         ]
@@ -186,11 +189,34 @@ async def analyze(request: AnalyzeRequest):
     print(f"\n[API] POST /analyze — models={request.selected_models} "
           f"top_k={request.top_k} prompt='{prompt[:60]}…'")
 
+    try:
+        prompt_preprocess = preprocess_prompt_for_models(prompt, request.selected_models)
+    except Exception as exc:
+        print("[PREPROCESS] ❌ Chinese-to-English preprocessing failed")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=502,
+            detail=f"Chinese-to-English preprocessing failed: {exc}",
+        ) from exc
+
+    model_prompt = prompt_preprocess.model_prompt
+    if prompt_preprocess.translated:
+        print(
+            "[API] Prompt translated for model input "
+            f"using {prompt_preprocess.translation_model}; "
+            f"required_by={prompt_preprocess.translation_required_by}"
+        )
+
     models_data: Dict[str, Any] = {}
     for idx, model_key in enumerate(request.selected_models):
         print(f"\n[HOT-SWAP] ⚙️  {idx + 1}/{len(request.selected_models)}: '{model_key}'")
         t0 = time.time()
-        models_data[model_key] = _pipeline.analyse_model(prompt, model_key, request.top_k)
+        model_data = _pipeline.analyse_model(model_prompt, model_key, request.top_k)
+        model_data.setdefault("model_metadata", {})
+        model_data["model_metadata"]["original_prompt"] = prompt_preprocess.original_prompt
+        model_data["model_metadata"]["model_prompt"] = prompt_preprocess.model_prompt
+        model_data["model_metadata"]["preprocessing"] = prompt_preprocess.to_metadata()
+        models_data[model_key] = model_data
         print(f"[HOT-SWAP] ✅ '{model_key}' — {time.time() - t0:.2f}s")
         vram_clear()
 
@@ -201,7 +227,10 @@ async def analyze(request: AnalyzeRequest):
 
     return {
         "metadata": {
-            "prompt":          prompt,
+            "prompt":          model_prompt,
+            "original_prompt": prompt_preprocess.original_prompt,
+            "model_prompt":    prompt_preprocess.model_prompt,
+            "preprocessing":   prompt_preprocess.to_metadata(),
             "selected_models": request.selected_models,
             "top_k":           request.top_k,
             "pipeline_mode":   "real" if FULL_PIPELINE else "mock",

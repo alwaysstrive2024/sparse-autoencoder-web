@@ -23,7 +23,7 @@ How to find sae_release / sae_id for a new model:
 from __future__ import annotations
 from typing import Dict
 
-ModelEntry = Dict[str, str]
+ModelEntry = Dict[str, object]
 
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.4.hook_resid_pre",
         "hook_layer":    4,
+        "chinese_input_policy": "translate_to_en",
     },
     "gpt2-small-l8": {
         "display_name":  "GPT-2(Layer 8)",
@@ -46,6 +47,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.8.hook_resid_pre",
         "hook_layer":    8,
+        "chinese_input_policy": "translate_to_en",
     },
     "gpt2-small-l11": {
         "display_name":  "GPT-2(Layer 11)",
@@ -54,6 +56,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "gpt2",
         "hook_point":    "blocks.11.hook_resid_pre",
         "hook_layer":    11,
+        "chinese_input_policy": "translate_to_en",
     }, 
 
     # —— Google Gemma 3  ──────────────────────────────
@@ -66,6 +69,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    4,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "4-res-jb",
+        "chinese_input_policy": "translate_to_en",
     }, 
     "gemma-3-l8": {
         "display_name":  "Gemma 3 (Layer 8)",
@@ -76,6 +80,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    8,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "8-res-jb",
+        "chinese_input_policy": "translate_to_en",
     }, 
     "gemma-3-l12": {
         "display_name":  "Gemma 3 (Layer 12)",
@@ -86,6 +91,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hook_layer":    12,
         "np_model_id":   "gemma-3-1b-pt",
         "np_sae_id":     "12-res-jb",
+        "chinese_input_policy": "translate_to_en",
     },  
 
     # ── Google Gemma-4 E2B (decoderesearch SAEs) ──────────────────────────────
@@ -97,6 +103,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "google/gemma-4-E2B-it",
         "hook_point":    "blocks.6.hook_resid_post",
         "hook_layer":    6,
+        "chinese_input_policy": "translate_to_en",
     },
     "gemma-4-e2b-l17": {
         "display_name":  "Gemma-4 (Layer 17)",
@@ -105,6 +112,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "google/gemma-4-E2B-it",
         "hook_point":    "blocks.17.hook_resid_post",
         "hook_layer":    17,
+        "chinese_input_policy": "translate_to_en",
     },
     "gemma-4-e2b-l28": {
         "display_name":  "Gemma-4 (Layer 28)",
@@ -113,6 +121,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "google/gemma-4-E2B-it",
         "hook_point":    "blocks.28.hook_resid_post",
         "hook_layer":    28,
+        "chinese_input_policy": "translate_to_en",
     },
 
     # ── Meta Llama 3.2 1B ─────────────────────────────────────────────────────
@@ -123,6 +132,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.4.hook_resid_post",
         "hook_layer":    4,
+        "chinese_input_policy": "translate_to_en",
     },
     "llama-3.2-1b-l8": {
         "display_name":  "Llama 3.2 (Layer 8)",
@@ -131,6 +141,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.8.hook_resid_post",
         "hook_layer":    8,
+        "chinese_input_policy": "translate_to_en",
     }, 
     "llama-3.2-1b-l12": {
         "display_name":  "Llama 3.2 (Layer 12)",
@@ -139,6 +150,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "meta-llama/Llama-3.2-1B",
         "hook_point":    "blocks.12.hook_resid_post",
         "hook_layer":    12,
+        "chinese_input_policy": "translate_to_en",
     },
 
    # ── Qwen 3.5 0.8B (decoderesearch SAEs) ──────────────────────────────────
@@ -149,6 +161,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "Qwen/Qwen3.5-0.8B",
         "hook_point":    "blocks.5.hook_resid_post",
         "hook_layer":    5,
+        "chinese_input_policy": "translate_to_en",
     }, 
     "qwen-3.5-0.8b-l11": {
         "display_name":  "Qwen 3.5 (Layer 11)",
@@ -157,6 +170,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "Qwen/Qwen3.5-0.8B",
         "hook_point":    "blocks.11.hook_resid_post",
         "hook_layer":    11,
+        "chinese_input_policy": "translate_to_en",
     },
     "qwen-3.5-0.8b-l17": {
         "display_name":  "Qwen 3.5 (Layer 17)",
@@ -165,6 +179,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "Qwen/Qwen3.5-0.8B",
         "hook_point":    "blocks.17.hook_resid_post",
         "hook_layer":    17,
+        "chinese_input_policy": "translate_to_en",
     },  
 
     # ── DeepSeek R1 ───────────────────────────────────────────────────────────
@@ -175,6 +190,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "hf_model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "hook_point":    "blocks.16.hook_resid_post",
         "hook_layer":    16,
+        "chinese_input_policy": "translate_to_en",
     },
     
 
@@ -187,7 +203,7 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
     #     "hf_model_name": "org/model-name",       # 真实 HF 基座模型 ID
     #     "hook_point":    "blocks.N.hook_resid_post",
     #     "hook_layer":    N,
+    #     "chinese_input_policy": "translate_to_en",
     # },
 
 }
-
