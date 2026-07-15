@@ -1,0 +1,20 @@
+# 新网络入口覆盖文件。
+# 迁移旧 sae-frontend-ingress 时，在基础 values.yaml 之后追加本文件。
+ingress:
+  enabled: true
+  nameOverride: sae-web-ingress
+  className: nginx
+  legacyClassAnnotation: true
+  host: gufy.aixiongan.org.cn
+
+  # 第一阶段先在内网验证 HTTP。公网 FRP 上线前必须准备证书并改为 true。
+  tls:
+    enabled: false
+    secretName: sae-web-tls
+
+  # 公网开放前必须选择来源 CIDR、Basic Auth 或平台 OIDC/WAF。
+  sourceRanges: []
+  basicAuth:
+    enabled: false
+    secretName: ""
+    realm: SAE Web Test Access

@@ -1,0 +1,325 @@
+{{- if .Values.backend.enabled }}
+{{- $modelStorageType := .Values.backend.modelStorage.type -}}
+{{- if not (has $modelStorageType (list "existingClaim" "emptyDir")) -}}
+{{- fail "backend.modelStorage.type 只能是 existingClaim 或 emptyDir" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sae-web.backend.fullname" . }}
+  labels:
+    {{- include "sae-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  # 个人 /root 不共享且 GPU 独占，因此后端固定单副本。若未来扩副本，需要每个
+  # Pod 独立缓存或申请支持 ReadWriteMany 的共享模型卷，并评估并发下载策略。
+  replicas: {{ .Values.backend.replicaCount }}
+  progressDeadlineSeconds: {{ .Values.backend.progressDeadlineSeconds }}
+  strategy:
+    {{- toYaml .Values.backend.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "sae-web.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sae-web.backend.selectorLabels" . | nindent 8 }}
+        {{- with .Values.backend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # ConfigMap 内容变化会改变摘要，Deployment 因 PodTemplate 变化自动重建
+        # Pod。仅在容器内挂载 ConfigMap 而没有 checksum 时，Clash 未必会热加载。
+        checksum/clash-config: {{ include (print $.Template.BasePath "/clash-configmap.yaml") . | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      # 两个容器共享同一个 Pod 网络命名空间，因此都能看到同一个 127.0.0.1；
+      # 它们不自动共享文件系统，配置共享必须显式通过下方 volume 完成。
+      automountServiceAccountToken: {{ .Values.backend.automountServiceAccountToken }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.backend.podSecurityContext | nindent 8 }}
+      {{- if or .Values.backend.modelStorage.writableCheck.enabled (and .Values.clash.enabled .Values.clash.geoData.enabled) }}
+      initContainers:
+        {{- if .Values.backend.modelStorage.writableCheck.enabled }}
+        # 在主服务启动前真实写入并删除一个极小文件。PVC 名称正确但文件系统只读、
+        # Unix 权限不足或配额耗尽时，这里会直接报错，不会等到模型下载才发现。
+        - name: verify-model-storage
+          image: "{{ .Values.backend.image.repository }}:{{ default .Chart.AppVersion .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              mkdir -p "${MODEL_PATH}/hub/.locks"
+              probe_file="${MODEL_PATH}/.sae-write-test-$$"
+              : > "${probe_file}"
+              rm -f "${probe_file}"
+              echo "模型缓存目录可写：${MODEL_PATH}"
+          env:
+            - name: MODEL_PATH
+              value: {{ .Values.backend.env.modelPath | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: {{ .Values.backend.modelStorage.volumeName }}
+              mountPath: {{ .Values.backend.modelStorage.mountPath }}
+              readOnly: {{ .Values.backend.modelStorage.readOnly }}
+        {{- end }}
+        {{- if and .Values.clash.enabled .Values.clash.geoData.enabled }}
+        # Country.mmdb 是约 6MiB 的二进制文件，超过 ConfigMap 约 1MiB 上限。
+        # 专用 Clash 镜像携带它；initContainer 在主容器启动前把文件复制到
+        # clash-data emptyDir，随后 Sidecar 在 dataDir 中直接读取。
+        - name: seed-clash-geodata
+          image: "{{ .Values.clash.image.repository }}:{{ .Values.clash.image.tag }}"
+          imagePullPolicy: {{ .Values.clash.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - cp {{ .Values.clash.geoData.imagePath }} /work/{{ .Values.clash.geoData.fileName }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: clash-data
+              mountPath: /work
+        {{- end }}
+      {{- end }}
+      containers:
+        {{- if .Values.clash.enabled }}
+        # ── 容器 1：用户已验证 Clash 二进制的出网代理 Sidecar ────────────────
+        - name: clash
+          image: "{{ .Values.clash.image.repository }}:{{ .Values.clash.image.tag }}"
+          imagePullPolicy: {{ .Values.clash.image.pullPolicy }}
+          args:
+            {{- toYaml .Values.clash.args | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            # mixed-port 同时支持 HTTP/SOCKS。它只需在 Pod 内监听，无需创建 Service。
+            - name: proxy
+              containerPort: {{ .Values.clash.ports.mixed }}
+              protocol: TCP
+            - name: controller
+              containerPort: {{ .Values.clash.ports.controller }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.clash.resources | nindent 12 }}
+          volumeMounts:
+            # ConfigMap volume 是只读文件系统；config.yaml 会出现在 mountDir 下。
+            - name: clash-config
+              mountPath: {{ .Values.clash.config.mountDir }}
+              readOnly: true
+            # provider 文件、选择状态等运行数据必须写入独立 emptyDir。
+            - name: clash-data
+              mountPath: {{ .Values.clash.config.dataDir }}
+          {{- if .Values.clash.startupProbe.enabled }}
+          startupProbe:
+            # Clash 按安全配置只监听 127.0.0.1。Kubernetes tcpSocket 探针固定访问
+            # Pod IP，会误判 localhost 服务不可达；改为容器内执行本地端口检查。
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - nc -z 127.0.0.1 {{ .Values.clash.ports.mixed }}
+            periodSeconds: {{ .Values.clash.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.clash.startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.clash.readinessProbe.enabled }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - nc -z 127.0.0.1 {{ .Values.clash.ports.mixed }}
+            periodSeconds: {{ .Values.clash.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.clash.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.clash.livenessProbe.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - nc -z 127.0.0.1 {{ .Values.clash.ports.mixed }}
+            periodSeconds: {{ .Values.clash.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.clash.livenessProbe.failureThreshold }}
+          {{- end }}
+        {{- end }}
+
+        # ── 容器 2：Python/FastAPI/PyTorch 推理容器 ─────────────────────────
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ default .Chart.AppVersion .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.backend.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            # MODEL_PATH 是应用读取的缓存根目录；模型第一次使用时下载，之后从
+            # 平台注入的个人永久 GPFS /root 中复用，不把权重打进镜像。
+            - name: MODEL_PATH
+              value: {{ .Values.backend.env.modelPath | quote }}
+            - name: REQUIRE_CUDA
+              value: {{ ternary "true" "false" .Values.backend.env.requireCuda | quote }}
+            - name: ALLOW_MOCK_FALLBACK
+              value: {{ ternary "true" "false" .Values.backend.env.allowMockFallback | quote }}
+            - name: HF_HOME
+              value: {{ .Values.backend.huggingFace.home | quote }}
+            - name: HF_HUB_CACHE
+              value: {{ .Values.backend.huggingFace.hubCache | quote }}
+            - name: TRANSFORMERS_CACHE
+              value: {{ .Values.backend.huggingFace.transformersCache | quote }}
+            - name: HF_ENDPOINT
+              value: {{ .Values.backend.huggingFace.endpoint | quote }}
+            # 这不是“禁用 Hugging Face 全部锁”；它关闭 Xet 路径，真正的 GPFS
+            # flock 规避由下方将 hub/.locks 挂载到本地 emptyDir 完成。
+            - name: HF_HUB_DISABLE_XET
+              value: {{ ternary "1" "0" .Values.backend.huggingFace.disableXet | quote }}
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: {{ .Values.backend.huggingFace.downloadTimeoutSeconds | quote }}
+            - name: HF_HUB_ETAG_TIMEOUT
+              value: {{ .Values.backend.huggingFace.etagTimeoutSeconds | quote }}
+            - name: TOKENIZERS_PARALLELISM
+              value: "false"
+            {{- if .Values.clash.enabled }}
+            # 同时设置大小写两套变量，兼容 Requests、httpx、HF Hub 等不同实现。
+            - name: HTTP_PROXY
+              value: {{ .Values.clash.proxyEnv.httpProxy | quote }}
+            - name: HTTPS_PROXY
+              value: {{ .Values.clash.proxyEnv.httpsProxy | quote }}
+            - name: http_proxy
+              value: {{ .Values.clash.proxyEnv.httpProxy | quote }}
+            - name: https_proxy
+              value: {{ .Values.clash.proxyEnv.httpsProxy | quote }}
+            # localhost、*.svc、平台实际的 *.k8s.aiplat（以及兼容的
+            # *.cluster.local）和固定 Service 必须直连，防止集群内部请求绕到
+            # Clash 后形成回环、超时或 DNS 解析异常。
+            - name: NO_PROXY
+              value: {{ .Values.clash.proxyEnv.noProxy | quote }}
+            - name: no_proxy
+              value: {{ .Values.clash.proxyEnv.noProxy | quote }}
+            {{- end }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.huggingFace.tokenSecret.name }}
+                  key: {{ .Values.backend.huggingFace.tokenSecret.key }}
+                  optional: {{ .Values.backend.huggingFace.tokenSecret.optional }}
+            # 保持与当前已经推送的后端镜像兼容；Python 通过 os.getenv 能读取
+            # 带连字符的变量名，Secret 键和容器环境变量均使用 X-API-KEY。
+            - name: X-API-KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.neuronpedia.tokenSecret.name }}
+                  key: {{ .Values.backend.neuronpedia.tokenSecret.key }}
+                  optional: {{ .Values.backend.neuronpedia.tokenSecret.optional }}
+          resources:
+            # values 同时声明 GPU request/limit=1，设备插件会把一张 GPU 独占分配
+            # 给本容器；Clash 容器没有 GPU 资源，因此不会获得 CUDA 设备。
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            # 与平台默认模板保持一致，把现有个人 GPFS 挂到 /root。切换为 emptyDir
+            # 时挂载点不变，因此应用的 MODEL_PATH 无需修改。
+            - name: {{ .Values.backend.modelStorage.volumeName }}
+              mountPath: {{ .Values.backend.modelStorage.mountPath }}
+              readOnly: {{ .Values.backend.modelStorage.readOnly }}
+          {{- if .Values.backend.huggingFace.lockWorkaround.enabled }}
+            # 仅覆盖 Hub 的锁目录，权重本体仍写入个人 GPFS。filelock/flock 在
+            # 本地 emptyDir 上执行，避免 GPFS 锁实现导致长时间阻塞。
+            - name: {{ .Values.backend.huggingFace.lockWorkaround.volumeName }}
+              mountPath: {{ .Values.backend.huggingFace.lockWorkaround.mountPath }}
+          {{- end }}
+          {{- if .Values.backend.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.backend.startupProbe.path }}
+              port: http
+            periodSeconds: {{ .Values.backend.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.backend.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.backend.startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.backend.readinessProbe.enabled }}
+          # 推理请求可能长时间阻塞 Python 事件循环，readiness/liveness 使用 TCP，
+          # 避免模型加载期间 HTTP 探针超时而错误重启正在下载模型的容器。
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.backend.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.backend.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.backend.livenessProbe.failureThreshold }}
+          {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.backend.terminationGracePeriodSeconds }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: {{ .Values.backend.modelStorage.volumeName }}
+          {{- if eq $modelStorageType "existingClaim" }}
+          # 只引用现有 PVC；这个 Deployment 不包含 PVC 资源，因此 Helm 卸载时
+          # 不会删除个人 GPFS。PVC 不存在时 Pod 会保持 Pending，而不会偷偷改用磁盘。
+          persistentVolumeClaim:
+            claimName: {{ required "使用 existingClaim 时 backend.modelStorage.existingClaim 不能为空" .Values.backend.modelStorage.existingClaim }}
+            readOnly: {{ .Values.backend.modelStorage.readOnly }}
+          {{- else }}
+          # emptyDir 生命周期属于 Pod：容器 OOM 重启保留，Pod 删除/重建后清空。
+          emptyDir:
+            {{- with .Values.backend.modelStorage.emptyDir.sizeLimit }}
+            sizeLimit: {{ . | quote }}
+            {{- end }}
+          {{- end }}
+        {{- if .Values.clash.enabled }}
+        - name: clash-config
+          configMap:
+            # ConfigMap 的每个 data 键都会投影为文件；items 显式限定只挂载
+            # config.yaml，避免未来 ConfigMap 增加其他键时意外暴露给 Sidecar。
+            name: {{ include "sae-web.clash.configMapName" . }}
+            items:
+              - key: {{ .Values.clash.config.key }}
+                path: {{ .Values.clash.config.key }}
+        - name: clash-data
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.backend.huggingFace.lockWorkaround.enabled }}
+        - name: {{ .Values.backend.huggingFace.lockWorkaround.volumeName }}
+          # medium 留空表示节点磁盘，而不是 RAM；锁文件很小，生命周期跟随 Pod。
+          emptyDir: {}
+        {{- end }}
+{{- end }}

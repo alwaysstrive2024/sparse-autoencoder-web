@@ -1,0 +1,398 @@
+# =============================================================================
+# SAE Web Helm 全局变量
+# =============================================================================
+
+global:
+  # 私有 Harbor 的拉取凭证。Secret 必须预先创建在 Helm Release 所在 namespace。
+  # Helm 不负责保存 Harbor 明文密码，只引用 Secret 名称。
+  imagePullSecrets:
+    - name: harbor-cred
+
+  # 当前平台 /etc/resolv.conf 实测使用 k8s.aiplat，而不是默认 cluster.local。
+  clusterDomain: k8s.aiplat
+
+  # 可统一添加成本中心、团队、环境等标签；会进入所有 Helm 管理资源。
+  commonLabels: {}
+    # team: xai
+    # environment: production
+
+# 名称覆盖通常保持为空。fullnameOverride 会影响 Deployment 名称和 selector，
+# 但不会改变显式固定的 sae-backend-svc Service 名称。
+nameOverride: ""
+fullnameOverride: ""
+
+# =============================================================================
+# 前端：Vite 静态产物 + Nginx
+# =============================================================================
+frontend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: harbor.aixiongan.org.cn:9443/saeweb/sae-frontend
+    tag: v1.0.0
+    # 使用不可变版本 Tag 时 IfNotPresent 可减少重复拉取；不要反复覆盖同一个 Tag。
+    pullPolicy: IfNotPresent
+
+  # 额外注解/标签为监控、日志采集或服务网格预留。
+  podAnnotations: {}
+  podLabels: {}
+
+  # 前端不访问 Kubernetes API，禁用默认 ServiceAccount Token 自动挂载，减少暴露面。
+  automountServiceAccountToken: false
+
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+
+  service:
+    enabled: true
+    # 当前沿用已有部署命名，便于 port-forward/Ingress 引用。
+    nameOverride: sae-frontend-svc
+    type: ClusterIP
+    port: 80
+    targetPort: http
+    annotations: {}
+    # type 改为 NodePort 时才填写，例如 30080；空值表示由 Kubernetes 分配。
+    nodePort: null
+
+  # Nginx 只托管静态文件。64Mi request 足够调度，256Mi limit 为连接峰值、
+  # gzip 和缓存留出空间；这里的 memory 均为 Pod RAM，而非显存或磁盘。
+  resources:
+    requests:
+      cpu: 50m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 2Gi
+
+  # Vite/Nginx 启动很快，HTTP 探针同时验证 index.html 能被正确返回。
+  readinessProbe:
+    enabled: true
+    path: /
+    initialDelaySeconds: 2
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  livenessProbe:
+    enabled: true
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+  # 单副本滚动升级时 maxUnavailable=0，保证旧 Pod 在新 Pod Ready 前继续服务。
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  terminationGracePeriodSeconds: 30
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Ingress：统一从前端入口接收页面和 /api，同源访问且不直接公开 GPU 后端
+# =============================================================================
+ingress:
+  # 迁移前保持 false，避免与 namespace 中旧的 sae-frontend-ingress 同时声明
+  # 相同 Host/Path。正式迁移使用 values-ingress.yaml 将其开启。
+  enabled: false
+
+  # 新资源使用 sae-web-ingress，与待废弃旧资源名称区分，便于明确回滚边界。
+  nameOverride: sae-web-ingress
+
+  # 现有旧 Ingress 的 nginx 注解已被控制器识别。管理员确认正式 IngressClass
+  # 名称后优先使用 spec.ingressClassName；兼容注解可在确认后关闭。
+  className: nginx
+  legacyClassAnnotation: true
+
+  host: gufy.aixiongan.org.cn
+  path: /
+  pathType: Prefix
+
+  # 只路由到前端 Service。前端 Nginx 已将 /api/* 转发到 sae-backend-svc，
+  # 因此不能在 Ingress 重复配置 rewrite 或直接公开 backend 8000。
+  service:
+    port: 80
+
+  nginx:
+    proxyBodySize: 50m
+    proxyConnectTimeout: "15"
+    proxyReadTimeout: "600"
+    proxySendTimeout: "600"
+    sslRedirect: true
+
+  # 额外注解用于接入平台 WAF、日志或其他控制器特性；不要在这里写明文凭据。
+  annotations: {}
+
+  # 为空表示不限制来源。公网开放前建议填写公司/测试组出口 CIDR，或者启用
+  # 下方 Basic Auth/OIDC；FRP 的隧道 Token 不能代替网站用户认证。
+  sourceRanges: []
+    # - 203.0.113.10/32
+
+  tls:
+    # 当前 namespace 尚无 TLS Secret，因此默认关闭。FRP TCP 443 上线前必须开启。
+    enabled: false
+    secretName: sae-web-tls
+
+  certManager:
+    # 仅在管理员确认 cert-manager Issuer/ClusterIssuer 名称后开启。
+    enabled: false
+    clusterIssuer: ""
+
+  basicAuth:
+    # 适合短期测试组。长期建议使用平台 OIDC/OAuth2 或 WAF 身份认证。
+    enabled: false
+    secretName: ""
+    realm: SAE Web Test Access
+
+# =============================================================================
+# 后端：FastAPI + PyTorch/CUDA（本阶段只渲染 Service，不渲染 Deployment）
+# =============================================================================
+backend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: harbor.aixiongan.org.cn:9443/saeweb/sae-backend
+    # 基于 Torch 2.7.1/cu128，启动时强制验证 RTX PRO 6000 的 sm_120 内核。
+    # SAELens 6.46 + TransformerLens 3.5 + Transformers 5.13；支持
+    # GPT-2/Gemma/Llama/DeepSeek/Qwen 3.5，并保持 Torch 2.7.1/cu128。
+    tag: v1.1.0-sae6
+    pullPolicy: IfNotPresent
+
+  # 单副本 GPU Pod 使用 Recreate：升级时先停旧 Pod 再建新 Pod，避免同时申请
+  # 两张 GPU，也避免两个 Pod 同时写个人 GPFS 模型缓存。
+  strategy:
+    type: Recreate
+
+  # Blackwell/CUDA 后端镜像体积较大，节点首次拉取可能超过 Kubernetes 默认的
+  # 10 分钟 Deployment 进度期限；与 Helm 60 分钟 timeout 对齐，避免误报失败。
+  progressDeadlineSeconds: 3600
+
+  podAnnotations: {}
+  podLabels: {}
+  automountServiceAccountToken: false
+  terminationGracePeriodSeconds: 60
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+
+  service:
+    enabled: true
+    # 必须与 frontend/nginx.conf 中的 sae-backend-svc 保持一致。
+    nameOverride: sae-backend-svc
+    type: ClusterIP
+    port: 8000
+    targetPort: http
+    annotations: {}
+    nodePort: null
+
+  # 资源规划供下一阶段 backend Deployment 使用。
+  resources:
+    requests:
+      # request 决定调度保证；先预留 16 核，后续根据实际推理并发测量调整。
+      cpu: "16"
+      # 180Gi RAM request 为 Sidecar、kubelet 和节点系统预留余量。
+      memory: 180Gi
+      # GPU 扩展资源 request/limit 必须一致，确保独占一张卡。
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: "32"
+      # 用户要求的 200G RAM 上限使用 Kubernetes 二进制单位 200Gi 表示。
+      memory: 200Gi
+      nvidia.com/gpu: "1"
+
+  # 只把 GPU 后端调度到指定型号节点；前端不会继承此 nodeSelector。
+  nodeSelector:
+    gpu-model: PRO6000
+  tolerations: []
+  affinity: {}
+
+  env:
+    # 模型首次使用时从外网下载，随后缓存到平台提供的个人持久化 /root。
+    modelPath: /root/.cache/huggingface
+    # GPU 生产 Pod 必须在启动期执行真实 CUDA kernel；失败时拒绝 Ready。
+    requireCuda: true
+    # 禁止真实 pipeline 失败后伪装成成功的 mock 响应。
+    allowMockFallback: false
+
+  huggingFace:
+    # 固定 Hugging Face 官方站点；外网访问通过同 Pod Clash Sidecar 完成。
+    endpoint: https://huggingface.co
+    home: /root/.cache/huggingface
+    hubCache: /root/.cache/huggingface/hub
+    transformersCache: /root/.cache/huggingface/hub
+    tokenSecret:
+      # backend/.env 不会进入镜像或 Pod。部署前由该文件生成统一后端 Secret，
+      # Chart 这里只引用 Secret，不会把 Token 写进 values 或渲染结果。
+      name: sae-backend-secrets
+      key: HF_TOKEN
+      optional: false
+
+    # 关闭 hf-xet 的分块下载/缓存路径，减少 GPFS 上的附加缓存和锁行为。
+    disableXet: true
+    downloadTimeoutSeconds: 600
+    etagTimeoutSeconds: 30
+
+    lockWorkaround:
+      # Hugging Face 没有官方的“完全禁用 filelock”环境变量。将 hub/.locks 单独
+      # 挂到本地 emptyDir，让 flock 在节点本地文件系统执行，是更安全的规避方法。
+      enabled: true
+      volumeName: hf-locks
+      mountPath: /root/.cache/huggingface/hub/.locks
+
+  neuronpedia:
+    tokenSecret:
+      # 保留当前已推送后端镜像读取的 X-API-KEY 键名。连字符本身合法，但 .env
+      # 必须写成 X-API-KEY=值，键名与等号之间不能存在空格。
+      name: sae-backend-secrets
+      key: X-API-KEY
+      optional: true
+
+  modelStorage:
+    # existingClaim：引用管理员已经创建的 PVC；Helm 不创建、不修改也不删除 PVC。
+    # emptyDir：每个 Pod 独立缓存，容器 OOM 重启仍保留，Pod 删除后随之清空。
+    # Kubernetes 不支持“PVC 不存在时自动退回 emptyDir”，必须主动切换此值。
+    type: existingClaim
+    volumeName: model-storage
+    mountPath: /root
+    readOnly: false
+    # 集群中已确认该 PVC 为 Bound、ReadWriteMany，并由平台默认模板挂到 /root。
+    existingClaim: pvc-gpfshome-gufy
+    emptyDir:
+      # 留空表示不在 PodSpec 中设置额外容量上限，实际仍受节点临时存储约束。
+      sizeLimit: ""
+    writableCheck:
+      # InitContainer 会创建并立即删除一个极小探针文件。若 PVC 只读、目录权限
+      # 不足或配额耗尽，Pod 会在模型服务启动前明确失败，避免首次推理静默降级。
+      enabled: true
+
+  startupProbe:
+    enabled: true
+    path: /
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 60
+  readinessProbe:
+    enabled: true
+    periodSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    enabled: true
+    periodSeconds: 30
+    failureThreshold: 3
+
+# =============================================================================
+# 自有 Clash 二进制 Sidecar
+# =============================================================================
+clash:
+  enabled: true
+
+  image:
+    # 使用 clashconfig/ 中已经验证的 Linux AMD64 静态二进制构建，不再依赖
+    # dreamacro/clash 或 metacubex/mihomo 外部运行镜像。
+    repository: harbor.aixiongan.org.cn:9443/saeweb/clash
+    tag: verified-amd64-v1
+    pullPolicy: IfNotPresent
+
+  ports:
+    # mixed-port 同时接受 HTTP 和 SOCKS；后端 HTTP(S)_PROXY 使用这个端口。
+    mixed: 7890
+    controller: 9090
+
+  config:
+    # true 时由 templates/clash-configmap.yaml 创建 ConfigMap；如果管理员已经
+    # 创建了 ConfigMap，则设 create=false 并填写 existingConfigMap。
+    create: true
+    existingConfigMap: ""
+    nameOverride: ""
+    key: config.yaml
+    mountDir: /etc/clash
+    filePath: /etc/clash/config.yaml
+    # provider 下载结果和运行状态需要可写目录，后续用 emptyDir 单独挂载。
+    dataDir: /root/.config/clash
+
+    # 默认仅为可渲染的占位模板。推荐在仓库根目录创建已被 gitignore 忽略的
+    # clashconfig/config.yaml，并用
+    # --set-file clash.config.content=./clashconfig/config.yaml 注入。
+    # 警告：ConfigMap 不是加密资源，有权限读取 ConfigMap 的用户可看到订阅信息；
+    # 生产敏感节点凭据更适合改用 Secret。
+    content: |
+      mixed-port: 7890
+      allow-lan: false
+      bind-address: 127.0.0.1
+      mode: rule
+      log-level: info
+      ipv6: false
+      external-controller: 127.0.0.1:9090
+
+      proxy-providers:
+        company-provider:
+          type: http
+          url: "REPLACE_WITH_YOUR_CLASH_SUBSCRIPTION_URL"
+          path: ./providers/company-provider.yaml
+          interval: 3600
+          health-check:
+            enable: true
+            url: https://www.gstatic.com/generate_204
+            interval: 300
+
+      proxy-groups:
+        - name: OUTBOUND
+          type: select
+          use:
+            - company-provider
+
+      rules:
+        - MATCH,OUTBOUND
+
+  geoData:
+    # 当前真实 config.yaml 含 GEOIP 规则，Country.mmdb 又超过 ConfigMap 大小
+    # 上限，因此把它放进自有 Clash 镜像，再由 initContainer 写入可写 dataDir。
+    enabled: true
+    imagePath: /opt/clash/Country.mmdb
+    fileName: Country.mmdb
+
+  # 参数与用户已验证的 clash -d 使用方式一致；-f 显式指定 ConfigMap 文件。
+  args:
+    - -d
+    - /root/.config/clash
+    - -f
+    - /etc/clash/config.yaml
+
+  # 下一阶段注入 backend 容器。大小写都保留，以兼容 Requests/httpx/HF Hub。
+  proxyEnv:
+    httpProxy: http://127.0.0.1:7890
+    httpsProxy: http://127.0.0.1:7890
+    noProxy: localhost,127.0.0.1,::1,.svc,.k8s.aiplat,.cluster.local,kubernetes.default.svc,sae-backend-svc,sae-frontend-svc
+
+  # Clash 本身非常轻量；请求值保证能调度，limit 防止异常占满节点资源。
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  startupProbe:
+    enabled: true
+    periodSeconds: 2
+    failureThreshold: 60
+  readinessProbe:
+    enabled: true
+    periodSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    enabled: true
+    periodSeconds: 30
+    failureThreshold: 3

@@ -1,0 +1,26 @@
+{{- if and .Values.frontend.enabled .Values.frontend.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sae-web.frontend.serviceName" . }}
+  labels:
+    {{- include "sae-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  {{- with .Values.frontend.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # 默认 ClusterIP 供 Ingress/port-forward 使用；不直接暴露 GPU 集群节点。
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "sae-web.frontend.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}
+      {{- if and (eq .Values.frontend.service.type "NodePort") .Values.frontend.service.nodePort }}
+      nodePort: {{ .Values.frontend.service.nodePort }}
+      {{- end }}
+{{- end }}

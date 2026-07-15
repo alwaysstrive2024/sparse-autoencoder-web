@@ -1,26 +1,4 @@
-# ── Core API ──────────────────────────────────────────────────────────────
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
-pydantic>=2.7.0
-python-multipart>=0.0.9
-
-# ── ML / Interpretability ─────────────────────────────────────────────────
-# PyTorch: install the CUDA build for your GPU from https://pytorch.org
-torch>=2.2.0
-
-# TransformerLens — hook-based LLM activation extraction
-transformer-lens>=1.18.0
-
-# SAELens — pre-trained Sparse Autoencoder weights & encoding
-sae-lens>=3.22.0
-
-# Numerical computing
-numpy>=1.26.0
-
-# Optional — speeds up HuggingFace model downloads
-huggingface-hub>=0.23.0
-requests
-accelerate>=0.28.0
-sentencepiece>=0.2.0
-sacremoses>=0.1.1
-
+# 本地开发的一站式依赖入口。容器构建会分别安装 runtime/app 两组依赖，
+# 这样体积最大的 CUDA/ML 层可以被多个后端产品复用。
+-r requirements-runtime.txt
+-r requirements-app.txt

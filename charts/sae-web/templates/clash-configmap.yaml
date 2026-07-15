@@ -1,0 +1,19 @@
+{{- if and .Values.clash.enabled .Values.clash.config.create (not .Values.clash.config.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sae-web.clash.configMapName" . }}
+  labels:
+    {{- include "sae-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+data:
+  # ConfigMap 的 data 是字符串键值表。这里的键 config.yaml 会在 Kubernetes
+  # 挂载 ConfigMap volume 时变成同名文件，下面的多行字符串就是文件内容。
+  # 它不是镜像层：修改 values 后执行 helm upgrade，Kubernetes 会更新对象；
+  # backend Deployment 中的 checksum 注解会触发 Pod 重建以加载新配置。
+  #
+  # ConfigMap 不加密，订阅 URL/节点密码对有读取权限的用户可见。当前按需求提供
+  # ConfigMap；安全要求更高时，应把同一挂载结构改为 Secret。
+  {{ .Values.clash.config.key }}: |
+    {{- required "clash.config.content 不能为空；请在 values 中填写或使用 --set-file clash.config.content=./clashconfig/config.yaml" .Values.clash.config.content | nindent 4 }}
+{{- end }}

@@ -4,8 +4,10 @@ from typing import List, Dict
 from dotenv import load_dotenv
 import os
 
-load_dotenv()  # Load environment variables from .env file
-NEURONPEDIA_API_KEY = os.getenv("X-API-KEY")
+load_dotenv()  # Load environment variables from .env file during local development.
+# Kubernetes injects the Secret using a shell-friendly name. Keep the original
+# X-API-KEY fallback so existing local .env files continue to work unchanged.
+NEURONPEDIA_API_KEY = os.getenv("NEURONPEDIA_API_KEY") or os.getenv("X-API-KEY")
 NEURONPEDIA_BASE_URL = "https://www.neuronpedia.org/api/feature"
 
 # Cache to avoid redundant API calls

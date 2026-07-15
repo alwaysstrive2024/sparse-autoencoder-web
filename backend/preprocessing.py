@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import Any, Dict, List
 
+from config import MODEL_CACHE_DIR
 from registry import MODEL_REGISTRY
 
 DEFAULT_ZH_EN_TRANSLATION_MODEL = "Helsinki-NLP/opus-mt-zh-en"
@@ -104,8 +105,8 @@ def _get_translator(model_name: str) -> Any:
     device = _translation_device()
     torch_device = torch.device("cpu" if device < 0 else f"cuda:{device}")
     print(f"[PREPROCESS] Loading zh->en translator '{model_name}' on device={torch_device}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR)
     model.to(torch_device)
     model.eval()
     return {

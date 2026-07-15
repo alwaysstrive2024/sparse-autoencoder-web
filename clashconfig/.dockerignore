@@ -1,0 +1,9 @@
+# 真实代理配置含订阅/节点凭据，只通过 Helm ConfigMap 注入，绝不发送到
+# Docker builder 或写入镜像层。
+config.yaml
+
+# 本构建上下文只需要 Dockerfile 和 Country.mmdb。
+*
+!Dockerfile
+!Country.mmdb
+!clash

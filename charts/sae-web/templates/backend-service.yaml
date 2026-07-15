@@ -1,0 +1,30 @@
+{{- if and .Values.backend.enabled .Values.backend.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  # 默认渲染为 sae-backend-svc，必须与 frontend/nginx.conf 的 upstream 一致。
+  name: {{ include "sae-web.backend.serviceName" . }}
+  labels:
+    {{- include "sae-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  {{- with .Values.backend.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # ClusterIP 已足够供前端 Nginx 和 Ingress 调用；确需直接对外时可在 values
+  # 覆盖为 NodePort/LoadBalancer，但生产环境通常优先通过 Ingress 统一入口。
+  type: {{ .Values.backend.service.type }}
+  selector:
+    # 下一阶段 backend Deployment 必须复用该 helper，Service 才能生成 Endpoint。
+    {{- include "sae-web.backend.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.backend.service.port }}
+      # targetPort 使用命名端口 http；未来后端容器需声明 containerPort 8000/name http。
+      targetPort: {{ .Values.backend.service.targetPort }}
+      {{- if and (eq .Values.backend.service.type "NodePort") .Values.backend.service.nodePort }}
+      nodePort: {{ .Values.backend.service.nodePort }}
+      {{- end }}
+{{- end }}

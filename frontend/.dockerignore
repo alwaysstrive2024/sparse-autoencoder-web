@@ -1,0 +1,21 @@
+# 减少发送给 Docker daemon 的构建上下文；这些目录很大且会在镜像内重新生成。
+node_modules/
+dist/
+
+# 开发配置不会用于 npm run build；生产配置保留，让 Vite 自动读取。
+.env.development
+.env.local
+.env.*.local
+
+# 版本库元数据、日志和编辑器文件均与前端运行无关。
+.git/
+*.log
+.DS_Store
+.vscode/
+.idea/
+# 防止未来把 TLS 文件移动到前端构建上下文后意外打包。
+**/*.key
+**/*.crt
+**/*.pem
+**/*.p12
+**/*.pfx
