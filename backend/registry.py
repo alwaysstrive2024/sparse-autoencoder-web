@@ -188,7 +188,8 @@ MODEL_REGISTRY: Dict[str, ModelEntry] = {
         "sae_release":   "Farmerobot/deepseek-r1-1.5b-sae-l16-topk32-v2",
         "sae_id":        "deepseek_base_l16_topk32_0M",
         "hf_model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-        "hook_point":    "blocks.16.hook_resid_post",
+        # 发布方元数据明确声明此 SAE 训练于第 16 层输入，而不是层输出。
+        "hook_point":    "blocks.16.hook_resid_pre",
         "hook_layer":    16,
         "chinese_input_policy": "translate_to_en",
     },

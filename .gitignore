@@ -14,6 +14,32 @@ dist-ssr
 debug_test.py
 .env
 
+# TLS 私钥、证书和证书容器均由 Kubernetes Secret 或 Sakura 服务管理。
+# 这些文件一旦提交到 Git，就必须吊销并重新签发，不能只靠删除提交补救。
+*.key
+*.crt
+*.pem
+*.p12
+*.pfx
+# 用户本地保存的 Sakura/TLS 材料与访问密钥；整个目录禁止进入 Git。
+sae-web-tls/
+# Vite 会自动读取这两个文件。按部署环境在本机维护，避免后续误把
+# 内网 API 地址或其他环境相关配置提交到仓库。
+frontend/.env.development
+frontend/.env.production
+
+# Python 本地运行/语法检查产物不应进入版本库或部署上下文。
+__pycache__/
+*.py[cod]
+
+# Clash 真实配置含订阅地址/节点密钥，只允许提交脱敏的 example 模板。
+clash-config.yaml
+clashconfig/config.yaml
+# GeoIP 数据库体积较大，通过专用 Mihomo 镜像分发，不提交到业务 Git。
+clashconfig/Country.mmdb
+# 已验证的 Linux AMD64 Clash 二进制由镜像构建上下文使用，不提交到业务 Git。
+clashconfig/clash
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.7
+
+# 共享的 Linux AMD64 GPU 推理/分析运行时。平台由 buildx 的
+# --platform linux/amd64 锁定，不在 FROM 中硬编码，以避免 Docker 平台警告。
+# runtime 已包含 PyTorch 2.7.1、CUDA 12.8 runtime 和 cuDNN 9，并包含 RTX PRO
+# 6000 Blackwell 所需的 sm_120 内核；它不包含 nvcc 或 NVIDIA 内核驱动。
+# 当前项目不编译自定义 CUDA 算子，因此无需体积更大的 devel 镜像。
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+LABEL org.opencontainers.image.title="SAE shared ML runtime" \
+      org.opencontainers.image.description="PyTorch 2.7.1 + CUDA 12.8 + cuDNN 9 + Blackwell sm_120 + TransformerLens 3.5/SAELens 6.46" \
+      org.opencontainers.image.vendor="saeweb"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MODEL_PATH=/root/.cache/huggingface \
+    HF_HOME=/root/.cache/huggingface
+
+WORKDIR /opt/sae-runtime
+
+# 只复制大环境依赖清单。业务源码变化不会使这一层失效；多个产品只要 FROM
+# 该 runtime，就能在 Harbor 和 Kubernetes 节点上按内容摘要复用相同大层。
+COPY requirements-runtime.txt ./
+
+# --no-cache-dir 不保留 wheel/源码下载缓存。torch==2.7.1 会复用基础镜像内
+# 已安装且匹配 CUDA 12.8 的 PyTorch，不会再下载另一套 CPU/CUDA wheel。
+RUN python -m pip install --no-cache-dir --retries 10 --resume-retries 10 \
+    --timeout 120 -r requirements-runtime.txt
+
+# 本仓库不使用 torchvision/torchaudio。该步骤必须位于所有 pip install 之后，
+# 清除基础镜像可能携带的冗余包，并在镜像构建期检查完整依赖闭包。
+RUN python -m pip uninstall -y torchvision torchaudio \
+    && python -m pip check
+
+# BuildKit 没有物理 GPU，torch.cuda.get_arch_list() 在该环境可能返回空列表，
+# 因此构建期只验证版本与依赖。sm_120 和真实 CUDA kernel 由应用启动时在 GPU
+# Pod 内强制验证，失败时 Pod 不会 Ready，也绝不会静默返回 mock 数据。
+RUN python -c "import torch; assert torch.__version__.startswith('2.7.1'), torch.__version__; assert torch.version.cuda == '12.8', torch.version.cuda; assert torch.backends.cudnn.is_available(), torch.backends.cudnn.version(); import transformers, transformer_lens, sae_lens, accelerate; print('torch=', torch.__version__, 'cuda=', torch.version.cuda, 'cudnn=', torch.backends.cudnn.version(), 'core imports: OK')"
+
+# 保存实际解析出的完整版本集合；即使 requirements 使用兼容区间，也能审计并
+# 在下一版 runtime 中把已验证组合升级为更严格的锁文件。
+RUN python -m pip freeze > /opt/sae-runtime/requirements.lock

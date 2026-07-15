@@ -1,0 +1,9 @@
+# 根目录作为 Docker 构建上下文时，绝不能向 daemon/buildkit 发送任何密钥材料。
+sae-web-tls/
+**/*.key
+**/*.crt
+**/*.pem
+**/*.p12
+**/*.pfx
+**/.env
+.git/

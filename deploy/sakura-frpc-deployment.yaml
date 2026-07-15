@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sae-sakura-frpc
+  namespace: gufy
+  labels:
+    app.kubernetes.io/name: sae-sakura-frpc
+    app.kubernetes.io/component: tunnel-client
+spec:
+  # 同一条 Sakura 隧道不能由两个 frpc 实例同时启动。
+  replicas: 1
+
+  # 禁止 RollingUpdate 暂时生成新旧两个 Pod，避免同一隧道重复登录。
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sae-sakura-frpc
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sae-sakura-frpc
+        app.kubernetes.io/component: tunnel-client
+    spec:
+      # frpc 不需要访问 Kubernetes API，避免把 ServiceAccount Token 暴露给容器。
+      automountServiceAccountToken: false
+
+      # 当前交付平台统一为 Linux/AMD64。
+      nodeSelector:
+        kubernetes.io/arch: amd64
+
+      imagePullSecrets:
+        - name: harbor-cred
+
+      containers:
+        - name: frpc
+          # 已验证源镜像版本：0.51.0-sakura-13，linux/amd64。
+          image: harbor.aixiongan.org.cn:9443/saeweb/sae-sakura-frpc:0.51.0-sakura-13-amd64-v1@sha256:9ce27d61c853fdfbbe16b2969fefd7e52aa9bdb041e7f5bff8c4c5c150c5d8e4
+          imagePullPolicy: IfNotPresent
+
+          # 官方镜像 ENTRYPOINT 已经是 /frpc；访问凭据由下面的 Secret 环境变量注入。
+          args:
+            - --disable_log_color
+
+          env:
+            - name: NATFRP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sae-sakura-frpc-credentials
+                  key: NATFRP_TOKEN
+            - name: NATFRP_TARGET
+              valueFrom:
+                secretKeyRef:
+                  name: sae-sakura-frpc-credentials
+                  key: NATFRP_TARGET
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+          # Sakura 自动 HTTPS 会把自动下发的 nyat.app 证书写入官方工作目录。
+          # 证书由 frpc 重启时重新获取，因此不需要 PVC，也不需要手工 TLS Secret。
+          volumeMounts:
+            - name: frpc-workdir
+              mountPath: /run/frpc
+
+      volumes:
+        - name: frpc-workdir
+          emptyDir:
+            sizeLimit: 1Gi
+
+      dnsPolicy: ClusterFirst
+      terminationGracePeriodSeconds: 30

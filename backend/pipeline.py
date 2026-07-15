@@ -13,12 +13,14 @@ Handles all computation:
 
 from __future__ import annotations
 
+import os
 import random
 import time
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import (
+    MODEL_CACHE_DIR,
     layer_from_hook,
     naive_tokenise,
     safe_sae_attr,
@@ -35,6 +37,13 @@ SAE_AVAILABLE:  bool = False
 HF_AVAILABLE:   bool = False
 TORCH_AVAILABLE: bool = False
 FULL_PIPELINE:  bool = False
+
+
+def _mock_fallback_enabled() -> bool:
+    """Allow mock data only when explicitly enabled (normally local development)."""
+    return os.getenv("ALLOW_MOCK_FALLBACK", "true").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
 
 
 def set_deps(tl: bool, sae: bool, hf: bool, torch_ok: bool) -> None:
@@ -54,6 +63,38 @@ def _normalise_prompt_text(prompt: Any) -> str:
             raise ValueError("Prompt batch must contain at least one item.")
         prompt = prompt[0]
     return str(prompt)
+
+
+def _load_sae(
+    release: str,
+    sae_id: str,
+    *,
+    device: str = "cpu",
+) -> Any:
+    """Load an SAE across the SAELens 3.x and 6.x return-value APIs.
+
+    SAELens 3.x returned ``(sae, cfg_dict, sparsity)`` while 6.x returns the
+    SAE object directly. Normalising that small API difference here keeps the
+    analysis pipeline independent from the installed major version.
+    """
+    from sae_lens import SAE
+
+    loaded = SAE.from_pretrained(
+        release=release,
+        sae_id=sae_id,
+        device=device,
+    )
+    return loaded[0] if isinstance(loaded, tuple) else loaded
+
+
+def _sae_model_kwargs(sae_cfg: Any) -> Dict[str, Any]:
+    """Read model-loading kwargs from both legacy and modern SAE configs."""
+    direct = getattr(sae_cfg, "model_from_pretrained_kwargs", None)
+    if direct:
+        return dict(direct)
+    metadata = getattr(sae_cfg, "metadata", None)
+    nested = getattr(metadata, "model_from_pretrained_kwargs", None)
+    return dict(nested or {})
 
 
 # Config cache  (model_key → resolved config dict)
@@ -131,8 +172,7 @@ def _resolve_model_config(model_key: str) -> Dict[str, Any]:
     print(f"[CONFIG] 🔭 [SAELens] Fetching config for '{model_key}' …")
     print(f"[CONFIG]   release='{reg['sae_release']}'  sae_id='{reg['sae_id']}'")
 
-    from sae_lens import SAE as _SAE
-    sae_obj, _, _ = _SAE.from_pretrained(
+    sae_obj = _load_sae(
         release=reg["sae_release"],
         sae_id=reg["sae_id"],
     )
@@ -166,6 +206,7 @@ def _resolve_model_config(model_key: str) -> Dict[str, Any]:
         "d_model":       d_model,
         "np_model_id":   reg.get("np_model_id"),
         "np_sae_id":     reg.get("np_sae_id"),
+        "model_from_pretrained_kwargs": _sae_model_kwargs(sae_cfg),
     }
 
     del sae_obj
@@ -187,6 +228,7 @@ def _extract_activations_tl(
     hook_point: str,
     prompt: str,
     device: str,
+    model_from_pretrained_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Any, List[str]]:
     """
     Use HookedTransformer.run_with_hooks() to capture residual-stream
@@ -199,11 +241,13 @@ def _extract_activations_tl(
     prompt_text = _normalise_prompt_text(prompt)
     print(f"[PATH-A | TL] 🔬 [TransformerLens] Loading '{hf_model_name}' …")
     
-    model = HookedTransformer.from_pretrained(
+    model_kwargs = dict(model_from_pretrained_kwargs or {})
+    print(f"[PATH-A | TL] SAE model kwargs: {model_kwargs}")
+    model = HookedTransformer.from_pretrained_no_processing(
         hf_model_name,
-        center_writing_weights=False,
-        fold_ln=False,
         device=device,
+        cache_dir=MODEL_CACHE_DIR,
+        **model_kwargs,
     )
     model.eval()
     print(f"[PATH-A | TL] ✅ d_model={model.cfg.d_model}, n_layers={model.cfg.n_layers}")
@@ -266,6 +310,7 @@ def _find_hf_layer(model: Any, layer_idx: int) -> Any:
 def _extract_activations_hf(
     hf_model_name: str,
     layer_idx: int,
+    hook_point: str,
     prompt: str,
     device: str,
 ) -> Tuple[Any, List[str]]:
@@ -278,11 +323,12 @@ def _extract_activations_hf(
 
     prompt_text = _normalise_prompt_text(prompt)
     print(f"[PATH-B | HF] 🤗 Loading '{hf_model_name}' via AutoModelForCausalLM …")
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_name)
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_name, cache_dir=MODEL_CACHE_DIR)
     model = AutoModelForCausalLM.from_pretrained(
         hf_model_name,
-        torch_dtype=torch.float32,
+        dtype=torch.float32,
         device_map=device if device == "cpu" else "auto",
+        cache_dir=MODEL_CACHE_DIR,
     )
     model.eval()
 
@@ -296,10 +342,18 @@ def _extract_activations_hf(
     def hook_fn(module: Any, inp: Any, out: Any) -> None:
         hidden = out[0] if isinstance(out, (tuple, list)) else out
         captured["hidden"] = hidden.detach().clone()
-        print(f"[PATH-B | HF] 🎯 Hook fired @ layer {layer_idx} — {tuple(hidden.shape)}")
+        print(f"[PATH-B | HF] 🎯 Post-hook fired @ layer {layer_idx} — {tuple(hidden.shape)}")
+
+    def pre_hook_fn(module: Any, inp: Any) -> None:
+        hidden = inp[0] if isinstance(inp, (tuple, list)) else inp
+        captured["hidden"] = hidden.detach().clone()
+        print(f"[PATH-B | HF] 🎯 Pre-hook fired @ layer {layer_idx} — {tuple(hidden.shape)}")
 
     target_layer = _find_hf_layer(model, layer_idx)
-    handle = target_layer.register_forward_hook(hook_fn)
+    if hook_point.endswith("hook_resid_pre"):
+        handle = target_layer.register_forward_pre_hook(pre_hook_fn)
+    else:
+        handle = target_layer.register_forward_hook(hook_fn)
 
     with torch.no_grad():
         model(**inputs)
@@ -801,7 +855,8 @@ def _real_analyse_model(
         try:
             print(f"[REAL | {model_key}] 🔬 Trying Path A (TransformerLens) …")
             resid, token_strs = _extract_activations_tl(
-                cfg["hf_model_name"], cfg["hook_point"], prompt, device
+                cfg["hf_model_name"], cfg["hook_point"], prompt, device,
+                cfg.get("model_from_pretrained_kwargs"),
             )
             activation_path = "transformer_lens"
         except Exception as exc:
@@ -816,7 +871,7 @@ def _real_analyse_model(
             )
         print(f"[REAL | {model_key}] 🤗 Trying Path B (HuggingFace hook) …")
         resid, token_strs = _extract_activations_hf(
-            cfg["hf_model_name"], cfg["layer"], prompt, device
+            cfg["hf_model_name"], cfg["layer"], cfg["hook_point"], prompt, device
         )
         activation_path = "huggingface_hook"
 
@@ -829,14 +884,12 @@ def _real_analyse_model(
         concept_override = _load_concept_json(concept_json_name)
 
     # ── SAE encode ────────────────────────────────────────────────────────────
-    from sae_lens import SAE as _SAE
-
     print(f"[REAL | {model_key}] 🔭 [SAELens] Loading SAE "
           f"release='{cfg['sae_release']}' sae_id='{cfg['sae_id']}' …")
     
     # 增加显存保护机制，确保异常发生时也一定会释放 SAE 显存
     try:
-        sae, _, _ = _SAE.from_pretrained(
+        sae = _load_sae(
             release=cfg["sae_release"],
             sae_id=cfg["sae_id"],
             device=device,
@@ -915,7 +968,8 @@ def _real_analyse_model(
 def analyse_model(prompt: str, model_key: str, top_k: int) -> Dict[str, Any]:
     """
     Entry point called by the API route.
-    Tries real pipeline first; falls back to mock on any error.
+    Tries the real pipeline first. Production disables mock fallback so CUDA/model
+    failures surface as HTTP errors instead of returning plausible-looking fake data.
     """
     if FULL_PIPELINE:
         try:
@@ -923,6 +977,13 @@ def analyse_model(prompt: str, model_key: str, top_k: int) -> Dict[str, Any]:
         except Exception as exc:
             print(f"[ERROR | {model_key}] Real pipeline failed: {exc}")
             print(traceback.format_exc())
+            if not _mock_fallback_enabled():
+                print(f"[FALLBACK | {model_key}] disabled; propagating real error")
+                raise
             print(f"[FALLBACK | {model_key}] → mock pipeline")
             return _mock_analyse_model(prompt, model_key, top_k)
+    if not _mock_fallback_enabled():
+        raise RuntimeError(
+            "Real pipeline dependencies are unavailable and ALLOW_MOCK_FALLBACK=false"
+        )
     return _mock_analyse_model(prompt, model_key, top_k)

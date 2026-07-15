@@ -1,0 +1,63 @@
+{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.certManager.enabled (not .Values.ingress.tls.enabled) }}
+{{- fail "ingress.certManager.enabled=true 时必须同时设置 ingress.tls.enabled=true" }}
+{{- end }}
+{{- if and .Values.ingress.basicAuth.enabled (not .Values.ingress.basicAuth.secretName) }}
+{{- fail "ingress.basicAuth.enabled=true 时 ingress.basicAuth.secretName 不能为空" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "sae-web.ingress.fullname" . }}
+  labels:
+    {{- include "sae-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  annotations:
+    {{- if .Values.ingress.legacyClassAnnotation }}
+    # 兼容当前平台已经工作的旧式 Nginx class 注解；管理员确认 class 后可关闭。
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    {{- end }}
+    # 大模型请求可能持续数分钟。Ingress 超时必须不短于前端 Nginx 的 600 秒，
+    # 否则浏览器会先收到 504，而后端仍继续占用 GPU 计算。
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.nginx.proxyBodySize | quote }}
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: {{ .Values.ingress.nginx.proxyConnectTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.nginx.proxyReadTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.ingress.nginx.proxySendTimeout | quote }}
+    nginx.ingress.kubernetes.io/ssl-redirect: {{ ternary "true" "false" (and .Values.ingress.tls.enabled .Values.ingress.nginx.sslRedirect) | quote }}
+    {{- with .Values.ingress.sourceRanges }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," . | quote }}
+    {{- end }}
+    {{- if .Values.ingress.certManager.enabled }}
+    cert-manager.io/cluster-issuer: {{ required "启用 cert-manager 时 ingress.certManager.clusterIssuer 不能为空" .Values.ingress.certManager.clusterIssuer | quote }}
+    {{- end }}
+    {{- if .Values.ingress.basicAuth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.ingress.basicAuth.secretName | quote }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ .Values.ingress.basicAuth.realm | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ required "ingress.tls.enabled=true 时 ingress.tls.secretName 不能为空" .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.host 不能为空" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | quote }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                # 所有浏览器流量先进入前端；/api 继续由前端 Nginx同源代理。
+                name: {{ include "sae-web.frontend.serviceName" . }}
+                port:
+                  number: {{ .Values.ingress.service.port }}
+{{- end }}

@@ -1,0 +1,25 @@
+SAE Web Release 已渲染完成。
+
+1. 查看前端：
+   kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "sae-web.frontend.serviceName" . }} 8080:{{ .Values.frontend.service.port }}
+   浏览器访问 http://localhost:8080
+
+2. 当前后端 Service：
+   http://{{ include "sae-web.backend.serviceName" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ .Values.backend.service.port }}
+
+3. 后端双容器 Pod：
+   - clash：监听 127.0.0.1:{{ .Values.clash.ports.mixed }}
+   - backend：监听 0.0.0.0:8000，并独占 {{ index .Values.backend.resources.limits "nvidia.com/gpu" }} 张 GPU
+   - 模型缓存：{{ .Values.backend.env.modelPath }}（平台个人持久化 /root）
+   - GPFS 锁目录：{{ .Values.backend.huggingFace.lockWorkaround.mountPath }}（本地 emptyDir）
+
+4. 私有镜像要求：
+   namespace {{ .Release.Namespace }} 中必须已存在 Harbor Secret：
+   {{- range .Values.global.imagePullSecrets }}
+   - {{ .name }}
+   {{- end }}
+
+5. 首次部署请始终通过 --set-file 注入真实 Clash 配置：
+   --set-file clash.config.content=./clashconfig/config.yaml
+
+6. 建议先使用 port-forward 验证完整链路，再添加 Ingress。

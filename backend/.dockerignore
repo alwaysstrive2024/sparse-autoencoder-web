@@ -1,19 +1,37 @@
-# 忽略前端依赖和打包产物（刺客大头）
-node_modules/
-dist/
-.next/
-
-# 忽略 Python 缓存和本地虚拟环境
+# Python 缓存、测试缓存和本地虚拟环境不属于运行时。
 **/__pycache__/
 *.pyc
+.pytest_cache/
 .venv/
 venv/
 .env
 
-# 忽略大模型本地缓存与各种大文件
+# 严禁把 Hugging Face 缓存或模型权重发送进构建上下文。权重应在运行时
+# 通过只读/持久卷挂载到 MODEL_PATH，以保持镜像小且可复现。
 .cache/
 cache/
+models/
+huggingface/
 *.pt
 *.pth
 *.bin
+*.safetensors
+*.ckpt
+*.onnx
+*.gguf
+
+# pipeline 只读取 *_concept_to_token.json。排除未使用的反向映射和旧 8M 数据，
+# 构建上下文由约 224MB 降到约 57MB，同时保留当前概念标签功能。
+concept2token_8M/
+concept2token/*_token_to_concept.json
+
+# 版本库元数据、日志和本地系统文件均与运行无关。
 .git
+*.log
+.DS_Store
+# 防止未来把 TLS 文件移动到后端构建上下文后意外打包。
+**/*.key
+**/*.crt
+**/*.pem
+**/*.p12
+**/*.pfx

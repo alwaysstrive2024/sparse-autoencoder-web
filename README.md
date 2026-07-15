@@ -8,6 +8,11 @@ SAE configurations, and the FastAPI backend extracts residual-stream
 activations, encodes them with SAELens, and returns global and per-token feature
 reports.
 
+For the complete source-to-production guide, current Kubernetes architecture,
+Clash/GPFS/Sakura setup, and incident review, read
+`SAE_WEB_DEPLOYMENT_WHITEPAPER.md`. Production deployment is Helm-managed;
+`sae-demo-deploy.yaml` is deprecated and must not be applied.
+
 All real model execution is expected to run inside the GPU pod. Local execution
 is useful for reading code, editing the UI/API, and building images, but the
 full TransformerLens / HuggingFace / SAELens path should be treated as pod-only.
@@ -37,7 +42,10 @@ Sparse_autoencoder_web/
 │   ├── Dockerfile           # Vite build + nginx static serving
 │   ├── nginx.conf           # /api reverse proxy in K8s-style deployments
 │   └── package.json
-├── sae-demo-deploy.yaml     # GPU pod workspace manifest
+├── charts/sae-web/          # Production Helm Chart
+├── deploy/                  # Independent Sakura frpc deployment
+├── sae-demo-deploy.yaml     # Deprecated historical manifest; do not apply
+├── SAE_WEB_DEPLOYMENT_WHITEPAPER.md
 └── README.md
 ```
 
@@ -47,16 +55,19 @@ Files for other pod-side batch jobs have been removed from this main project.
 
 ## Runtime Model
 
-The application has two runtime modes:
+The code supports two runtime modes:
 
 - `real`: PyTorch + SAELens + TransformerLens or HuggingFace are available.
   The backend loads real models/SAEs and performs activation extraction.
-- `mock`: required ML dependencies are missing or a real analysis fails.
-  The backend returns schema-compatible seeded mock data so the frontend still
-  works.
+- `mock`: a development-only compatibility mode for environments without the
+  full ML stack.
 
 The backend decides the mode at startup in `backend/main.py` and injects those
 dependency flags into `backend/pipeline.py`.
+
+Production sets `REQUIRE_CUDA=true` and `ALLOW_MOCK_FALLBACK=false`. A CUDA or
+model failure must surface as an error and must never be disguised as plausible
+mock output.
 
 ---
 
@@ -127,10 +138,12 @@ Environment variables used by the backend:
 
 - `HF_TOKEN`: HuggingFace token for gated models.
 - `X-API-KEY`: optional Neuronpedia API key.
+- `MODEL_PATH`: Hugging Face cache root (default `/root/.cache/huggingface`).
+- `HTTP_PROXY` / `HTTPS_PROXY`: optional outbound proxy; the Kubernetes
+  deployment points both to the Clash sidecar at `127.0.0.1:7890`.
 
-`backend/main.py` currently sets `HTTP_PROXY` and `HTTPS_PROXY` to
-`http://127.0.0.1:7890`. In the pod, make sure that proxy exists, or remove /
-override those variables for direct network access.
+Proxy values are supplied by the runtime environment and are not hardcoded in
+the Python source.
 
 ---
 
@@ -150,10 +163,10 @@ By default the frontend calls:
 http://localhost:8000
 ```
 
-Override this with `VITE_API_URL`:
+Override this with `VITE_API_BASE_URL`:
 
 ```bash
-VITE_API_URL=http://<backend-host>:8000 npm run dev
+VITE_API_BASE_URL=http://<backend-host>:8000 npm run dev
 ```
 
 Production-style build:
@@ -164,40 +177,32 @@ npm run build
 ```
 
 The frontend Dockerfile builds the Vite app and serves it through nginx. In that
-mode `VITE_API_URL` defaults to `/api`, and `frontend/nginx.conf` forwards
-`/api/*` to `http://sae-backend-svc/`. If you use that nginx config in K8s,
+mode `VITE_API_BASE_URL` defaults to `/api`, and `frontend/nginx.conf` forwards
+`/api/*` to `http://sae-backend-svc:8000/`. If you use that nginx config in K8s,
 provide a matching backend Service named `sae-backend-svc`.
 
 ---
 
-## GPU Pod
+## GPU Deployment
 
-`sae-demo-deploy.yaml` creates a GPU pod in namespace `gufy`:
-
-```bash
-kubectl apply -f sae-demo-deploy.yaml
-kubectl exec -n gufy -it sae-demo -- bash
-```
-
-The current manifest requests:
-
-- node selector: `gpu-model: PRO6000`
-- GPU: `nvidia.com/gpu: "2"`
-- CPU: `64`
-- memory: `256Gi`
-- exposed container ports: `80` and `8000`
-
-Important: the manifest currently starts a long-running shell loop after basic
-environment cleanup:
+Production is managed by the Helm Chart under `charts/sae-web`:
 
 ```bash
-while true; do sleep 30; done
+helm upgrade --install sae-web charts/sae-web \
+  --namespace gufy \
+  --values charts/sae-web/values.yaml \
+  --set-file clash.config.content=./clashconfig/config.yaml \
+  --wait --timeout 60m
 ```
 
-So the pod stays alive as a GPU workspace, but it does not automatically start
-FastAPI or nginx. Start services manually inside the pod, or replace the pod
-command with the desired backend/frontend startup command when you are ready to
-serve it continuously.
+The backend Pod contains the Python service and a Clash sidecar, requests one
+exclusive GPU, 180Gi/200Gi RAM request/limit, and mounts the personal GPFS PVC
+at `/root`. The production runtime is PyTorch 2.7.1 + CUDA 12.8 + cuDNN 9 with
+Blackwell `sm_120` startup validation. The frontend is a separate lightweight
+Nginx Pod. Public access is provided by the independent Sakura frpc Deployment.
+
+See `DEPLOYMENT.md` and `SAE_WEB_DEPLOYMENT_WHITEPAPER.md`; do not apply the
+deprecated `sae-demo-deploy.yaml`.
 
 ---
 
@@ -270,9 +275,9 @@ Each feature entry should provide at least:
 
 - Keep real model execution on the pod.
 - The frontend can be developed locally against a pod backend by setting
-  `VITE_API_URL`.
-- `backend/pipeline.py` has a real-to-mock fallback. A successful HTTP response
-  can still contain `pipeline_mode: "mock"` for a model if real execution failed.
+  `VITE_API_BASE_URL`.
+- Development can explicitly enable mock fallback. Production sets
+  `ALLOW_MOCK_FALLBACK=false`, so real execution failures return errors.
 - `backend/registry.py` is the main extension point for supported models.
 - `frontend/src/constants.js` contains fallback UI models used only when the
   backend model list cannot be fetched.

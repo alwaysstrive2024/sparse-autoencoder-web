@@ -1,0 +1,17 @@
+apiVersion: v2
+name: sae-web
+description: React/Nginx frontend and GPU FastAPI/SAE backend Helm chart
+type: application
+
+# Chart 自身版本：任何 templates/values 行为变化都应递增此版本。
+version: 0.3.1
+
+# 默认业务镜像版本；各组件 image.tag 仍可独立覆盖。
+appVersion: "1.1.0-sae6"
+
+keywords:
+  - react
+  - fastapi
+  - pytorch
+  - cuda
+  - sparse-autoencoder

@@ -1,0 +1,13 @@
+# ── Lightweight backend application dependencies ───────────────────────────
+# 这部分变化频率通常高于 ML runtime；独立安装可避免业务代码升级时重建/上传
+# 数 GB 的 PyTorch、CUDA 和模型分析依赖层。
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.0
+python-multipart==0.0.9
+python-dotenv==1.0.1
+requests>=2.31.0,<3.0.0
+
+# 固定已验证的 Typer 0.12 系列，避免 FastAPI CLI 的传递依赖在应用镜像构建时
+# 静默升级并改变共享 ML runtime 的完整依赖闭包。
+typer>=0.12.3,<0.13.0

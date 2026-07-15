@@ -7,11 +7,22 @@ Import this module in pipeline.py and main.py.
 
 # ── 镜像源设置（必须在所有 HuggingFace 库导入之前）────────────────────────────
 # import os
-# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 import gc
+import os
 import re
 from typing import Any, List, Optional
+
+# Hugging Face/TransformerLens 共用的模型缓存根目录。容器运行时把宿主机
+# 缓存卷挂载到 MODEL_PATH，即可复用大模型权重，而不需要把权重 COPY 进镜像。
+DEFAULT_MODEL_PATH = "/root/.cache/huggingface"
+MODEL_PATH = os.getenv("MODEL_PATH", DEFAULT_MODEL_PATH).strip() or DEFAULT_MODEL_PATH
+MODEL_CACHE_DIR = os.path.join(MODEL_PATH, "hub")
+
+# 必须在 transformers、huggingface_hub、sae_lens 等库首次导入前设置。
+# SAE Lens 的内部下载没有统一暴露 cache_dir 参数，因此让它遵循 HF_HOME。
+os.environ["HF_HOME"] = MODEL_PATH
+os.environ["HF_HUB_CACHE"] = MODEL_CACHE_DIR
 
 # Dependency flags (set by main.py after import-time detection)
 TORCH_AVAILABLE: bool = False

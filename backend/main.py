@@ -9,11 +9,12 @@ All model registration lives in registry.py.
 from __future__ import annotations
 import os
 from dotenv import load_dotenv
-load_dotenv()  
-os.environ['HF_TOKEN'] = os.getenv("HF_TOKEN")
+load_dotenv()
 
-os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
-os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+# 提前导入 config，在任何 Hugging Face 相关依赖被探测/导入前设置 HF_HOME。
+# HF_TOKEN、HTTP_PROXY、HTTPS_PROXY 等变量由运行环境按需注入；不能把宿主机
+# 的 127.0.0.1 代理硬编码到容器中，因为容器内的回环地址只指向容器自身。
+from config import MODEL_PATH, vram_clear
 
 import time
 import traceback
@@ -52,7 +53,6 @@ print("=" * 60 + "\n")
 
 # ── Inject dependency flags into pipeline ────────────────────────────────────
 import pipeline as _pipeline  # noqa: E402
-from config import vram_clear  # noqa: E402
 from preprocessing import preprocess_prompt_for_models  # noqa: E402
 from registry import MODEL_REGISTRY  # noqa: E402
 
@@ -64,6 +64,48 @@ _pipeline.set_deps(
 )
 
 FULL_PIPELINE = _pipeline.FULL_PIPELINE
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _validate_required_cuda() -> None:
+    """Fail startup when the production GPU runtime cannot execute kernels."""
+    if not _env_flag("REQUIRE_CUDA", default=False):
+        return
+
+    if not TORCH_AVAILABLE:
+        raise RuntimeError("REQUIRE_CUDA=true but PyTorch is not importable")
+
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("REQUIRE_CUDA=true but torch.cuda.is_available() is false")
+
+    capability = torch.cuda.get_device_capability(0)
+    expected_arch = f"sm_{capability[0]}{capability[1]}"
+    compiled_arches = torch.cuda.get_arch_list()
+    if expected_arch not in compiled_arches:
+        raise RuntimeError(
+            f"GPU requires {expected_arch}, but this PyTorch build only provides "
+            f"{compiled_arches}"
+        )
+
+    # get_device_capability 只能读取设备信息；真实矩阵乘法与 synchronize 才能
+    # 提前捕获 no kernel image is available 等二进制内核不兼容问题。
+    probe = torch.ones((16, 16), device="cuda")
+    _ = probe @ probe
+    torch.cuda.synchronize()
+    del probe
+    print(
+        "[STARTUP] CUDA validation passed: "
+        f"torch={torch.__version__} cuda={torch.version.cuda} "
+        f"gpu={torch.cuda.get_device_name(0)} capability={capability}"
+    )
 
 # Pydantic request schema
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,8 +121,10 @@ class AnalyzeRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _validate_required_cuda()
     mode = "REAL" if FULL_PIPELINE else "MOCK"
     print(f"[STARTUP] 🚀 Pipeline mode: {mode}")
+    print(f"[STARTUP] Hugging Face model cache: {MODEL_PATH}")
     print(f"[STARTUP] Registered models: {list(MODEL_REGISTRY.keys())}")
     yield
     print("[SHUTDOWN] Cleaning up …")
@@ -244,4 +288,12 @@ async def analyze(request: AnalyzeRequest):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    # 容器拥有独立网络命名空间。0.0.0.0 才会监听容器的所有网卡，让 Docker
+    # 端口映射/Kubernetes Service 能访问；127.0.0.1 只允许容器内部自身访问。
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("RELOAD", "false").lower() == "true",
+        log_level="info",
+    )

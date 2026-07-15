@@ -1,0 +1,27 @@
+# ── Shared CUDA / ML runtime dependencies ──────────────────────────────────
+# PyTorch 版本必须与 Dockerfile.runtime 的官方 CUDA 基础镜像完全一致。
+# 精确约束可阻止其他依赖在构建时偷偷升级 torch 并破坏 CUDA ABI。
+torch==2.7.1
+
+# 暂时限制 NumPy 1.x，继续兼容 TransformerLens/SAELens 现有依赖组合。
+numpy>=1.26.0,<2.0.0
+
+# 现代 SAE 仓库使用 TopK/JumpReLU 新配置格式；这组版本已在 Blackwell GPU 上
+# 对 GPT-2、Gemma 3、Llama 3.2、DeepSeek R1 与 Qwen 3.5 做过真实端到端验证。
+transformer-lens==3.5.1
+sae-lens==6.46.0
+# 显式声明运行时直接使用或会影响模型/SAE 反序列化的关键依赖，避免未来解析
+# 到行为不同的版本。datasets 5 是 SAELens 6.46 的已验证依赖。
+datasets==5.0.0
+typeguard>=4.2.0,<5.0.0
+
+# 代码直接 import transformers，必须直接声明，不能依赖其他包偶然传递安装。
+# Qwen 3.5 的 qwen3_5 架构从 Transformers 5 系列获得正式支持。
+transformers==5.13.1
+huggingface-hub==1.23.0
+safetensors==0.8.0
+accelerate==1.14.0
+
+# Tokenizer / 翻译模型运行依赖。
+sentencepiece==0.2.0
+sacremoses==0.1.1
